@@ -1,5 +1,7 @@
 // Andon sohbet ekranı. Çerçeve yok; API'ye fetch ile konuşur.
 
+import { guvenliMarkdown } from "./metin.js";
+
 const OTURUM_ANAHTARI = "andon.oturum";
 const ROL_ADLARI = { operator: "Operatör", bakim: "Bakım mühendisi" };
 const ORNEKLER = {
@@ -275,42 +277,6 @@ function eleman(etiket, sinif, metin) {
   if (sinif) el.className = sinif;
   if (metin != null) el.textContent = metin;
   return el;
-}
-
-function kacis(metin) {
-  return metin.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-}
-
-function satirIci(metin) {
-  return kacis(metin)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
-}
-
-// LLM'in cevabındaki basit Markdown'ı (paragraf, madde, kalın) HTML'e çevirir. Metin önce
-// kaçış karakterlerine çevrilir; modelin ürettiği HTML sayfada çalıştırılamaz.
-function guvenliMarkdown(metin) {
-  const bloklar = [];
-  let liste = null;
-  for (const satir of metin.split("\n")) {
-    const madde = satir.match(/^\s*([-*•]|\d+[.)])\s+(.*)$/);
-    if (madde) {
-      const tur = /\d/.test(madde[1]) ? "ol" : "ul";
-      if (!liste || liste.tur !== tur) {
-        liste = { tur, maddeler: [] };
-        bloklar.push(liste);
-      }
-      liste.maddeler.push(satirIci(madde[2]));
-      continue;
-    }
-    liste = null;
-    const baslik = satir.match(/^#{1,6}\s+(.*)$/);
-    if (baslik) bloklar.push({ html: `<p><strong>${satirIci(baslik[1])}</strong></p>` });
-    else if (satir.trim()) bloklar.push({ html: `<p>${satirIci(satir)}</p>` });
-  }
-  return bloklar
-    .map((b) => b.html ?? `<${b.tur}>${b.maddeler.map((m) => `<li>${m}</li>`).join("")}</${b.tur}>`)
-    .join("");
 }
 
 ekraniGoster();

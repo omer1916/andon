@@ -1,9 +1,13 @@
 """API'nin girdi ve çıktı modelleri."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+# PostgreSQL metin alanları NUL baytı kabul etmez; girdi en baştan reddedilsin (LLM'e gidip
+# kota harcamadan, veritabanında 500'e dönüşmeden).
+NulsuzMetin = Annotated[str, StringConstraints(pattern=r"^[^\x00]*$")]
 
 HatTipi = Literal["pres", "kaynak", "montaj", "boya"]
 ArizaTipi = Literal["hidrolik", "mekanik", "elektrik", "sensor", "yazilim", "pnomatik"]
@@ -22,7 +26,7 @@ class ArizaFiltresi(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    hat: str | None = Field(
+    hat: NulsuzMetin | None = Field(
         None, description="Hat adı, büyük/küçük harf fark etmez", examples=["Pres 3"]
     )
     baslangic: date | None = Field(
@@ -64,7 +68,9 @@ class AramaIstegi(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    soru: str = Field(min_length=3, max_length=500, examples=["pres hattı arıza ilk kontrol"])
+    soru: NulsuzMetin = Field(
+        min_length=3, max_length=500, examples=["pres hattı arıza ilk kontrol"]
+    )
     k: int = Field(3, ge=1, le=10, description="Kaç parça dönsün")
 
 
@@ -82,7 +88,7 @@ class AramaSonucu(BaseModel):
 class SohbetIstegi(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    soru: str = Field(
+    soru: NulsuzMetin = Field(
         min_length=2,
         max_length=2000,
         examples=["Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?"],

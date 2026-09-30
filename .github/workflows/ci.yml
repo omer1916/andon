@@ -38,6 +38,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # Arayüzdeki HTML temizleyicinin XSS testleri (tests/test_arayuz_metin.py) Node ile koşar.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
       - name: Bağımlılıkları kur
         run: |
           # PyPI'daki Linux torch paketi CUDA'lı (~2 GB). Testler modeli yüklemediği için

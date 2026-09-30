@@ -29,6 +29,7 @@ dependencies = [
 dev = [
     "fpdf2>=2.8",  # sahte kılavuzların PDF'lerini üretmek için
     "httpx2",  # FastAPI TestClient için
+    "hypothesis>=6",  # özellik tabanlı testler
     "pytest>=8",
     "ruff>=0.6",
 ]

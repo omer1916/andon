@@ -13,6 +13,7 @@ from typing import Annotated
 import openai
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Path as FastAPIPath
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -211,7 +212,11 @@ def chat(
     responses={404: {"description": "Doküman yok ya da rolün görmeye yetkili değil"}},
     summary="Kılavuzun PDF'i; arayüzdeki kaynak bağlantıları bununla açılır",
 )
-def dokuman_pdf(kod: str, conn: Baglanti, kullanici: AktifKullanici):
+def dokuman_pdf(
+    kod: Annotated[str, FastAPIPath(pattern=r"^[A-Za-z0-9-]{1,32}$")],
+    conn: Baglanti,
+    kullanici: AktifKullanici,
+):
     dokuman = sorgular.dokuman_getir(conn, kod)
     # Yetkisiz rol için de 404: dokümanın var olduğu bile anlaşılmasın.
     if dokuman is None or dokuman["erisim"] not in kullanici.erisim:
@@ -239,6 +244,12 @@ def kullanim(conn: Baglanti, _: Annotated[Kullanici, Depends(rol_gerekli("bakim"
     return sorgular.llm_kullanim_ozeti(conn)
 
 
+async def _veri_hatasi(request: Request, hata: psycopg.DataError) -> JSONResponse:
+    """Kullanıcı girdisi veritabanının kabul etmediği bir değer içeriyorsa (örneğin NUL
+    baytı) 500 yerine 422 dön; iç hata ayrıntısı dışarı sızmasın."""
+    return JSONResponse(status_code=422, content={"detail": "Girdi geçersiz karakter içeriyor."})
+
+
 @asynccontextmanager
 async def lifespan(uygulama: FastAPI):
     # Veritabanı kapalı olsa da uygulama açılsın; /saglik durumu 503 ile bildirir.
@@ -264,6 +275,7 @@ def uygulama_olustur(model_on_yukle: bool = True) -> FastAPI:
         lifespan=lifespan,
     )
     uygulama.state.model_on_yukle = model_on_yukle
+    uygulama.add_exception_handler(psycopg.DataError, _veri_hatasi)
     uygulama.include_router(router)
     uygulama.mount("/static", StaticFiles(directory=STATIK_KLASOR), name="static")
     return uygulama
