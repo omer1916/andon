@@ -221,7 +221,7 @@ def main() -> None:
 
     metin = rapor(sonuclar, llm)
     if not args.sadece:
-        RAPOR_DOSYASI.write_text(metin, encoding="utf-8")
+        RAPOR_DOSYASI.write_text(metin, encoding="utf-8", newline="\n")
         print(f"\nRapor: {RAPOR_DOSYASI.relative_to(KOK)}")
     print(metin.split("\n\n| Soru")[0])
 

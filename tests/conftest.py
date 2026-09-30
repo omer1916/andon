@@ -28,7 +28,7 @@ from scripts.ingest import dokumanlari_yaz, kilavuzlari_oku
 from scripts.seed import demo_kullanicilari_yaz, veri_uret, veritabanina_yaz
 
 TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql://andon:andon@localhost:5432/andon_test"
+    "TEST_DATABASE_URL", "postgresql://andon:andon@127.0.0.1:5432/andon_test"
 )
 SABIT_AN = datetime(2026, 9, 30, 12, 0, tzinfo=TZ)
 TEST_PAROLA = "test-parolasi"

@@ -70,7 +70,7 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (137 test), ruff, GitHub Actions |
+| Kalite | pytest (1572 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Tasarım kararları
@@ -166,8 +166,30 @@ python scripts/degerlendir.py      # rapor: eval/sonuclar.md
 pytest -m eval                     # aynı set, her soru bir test
 ```
 
-**Sonuçlar henüz yok:** değerlendirme gerçek bir LLM anahtarı gerektiriyor ve bu depo anahtar
-olmadan hazırlandı. Rapor [`eval/sonuclar.md`](eval/sonuclar.md) dosyasına yazılacak.
+**Sonuç (`gemini-3.5-flash-lite`, Eylül 2026):**
+
+| | İlk çalıştırma | Düzeltmelerden sonra |
+|---|---|---|
+| Geçen | 27/30 | **30/30** |
+| Ortalama / p95 süre | 2,6 sn / - | 2,5 sn / 3,8 sn |
+| Soru başına token | 2.867 | 3.180 |
+| 30 sorunun maliyeti | $0,037 | $0,040 |
+
+İlk çalıştırmada başarısız olan üç sorunun incelemesi:
+
+- **s23 (gerçek hata):** "P3-HP'de kaç hidrolik arıza oldu, kök neden analizi gerekiyor mu?"
+  Sayı doğruydu, ama "bir ayda üçten fazla aynı tip arızada kök neden analizi" kuralını içeren
+  parça aramada 5. sıradaydı; agent ilk 3 parçayı alıyordu. Model uydurmak yerine "kılavuzda
+  bulamadım" dedi. Agent'ın varsayılanı k=5 yapıldı (soru başına ~300 token daha).
+- **s28, s29 (değerlendirici hatası):** Model doğru şekilde "bilgi bulunamamaktadır" ve "Pres 7
+  adında bir hat bulunmamaktadır" dedi; değerlendirici ise "bulunamadı" gibi tam kelimeler
+  arıyordu. Türkçe ekleri yakalayan kökler kullanıldı ("bulunam", "bulunmam"). Kökler olumlu
+  biçimleri ("bulunmaktadır") yakalamayacak kadar uzun tutuldu ve bu da test edildi.
+
+Düzeltmeler aynı setin sonuçlarına bakılarak yapıldığı için %100 iyimser bir sayıdır; bir
+sonraki adım, düzeltmeler sırasında görülmemiş sorulardan oluşan ikinci bir set olmalı. İlk
+çalıştırmanın ham raporu: [`eval/sonuclar_ilk_calistirma.md`](eval/sonuclar_ilk_calistirma.md),
+son rapor: [`eval/sonuclar.md`](eval/sonuclar.md).
 
 ## Geliştirme ortamı
 
@@ -179,7 +201,7 @@ py -3.12 -m venv .venv
 pip install -e ".[dev]"                 # PyTorch (CPU) dahil, ilk kurulum birkaç dakika sürer
 cp .env.example .env
 
-docker compose up -d db                 # yalnızca veritabanı (localhost:5432)
+docker compose up -d db                 # yalnızca veritabanı (127.0.0.1:5432)
 python scripts/seed.py                  # 6 aylık sahte veri + demo kullanıcılar
 python scripts/ingest.py                # kılavuz PDF'lerini işle
 uvicorn app.main:app --reload           # http://localhost:8000
@@ -191,15 +213,37 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 137 test; veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 1572 test (~30 sn); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
 veriyle doldurulur ve beklenen sonuçlar aynı veriden Python'da hesaplanıp API'nin cevabıyla
 karşılaştırılır. Embedding modeli ve LLM yerine sahte sürümleri kullanılır (kelime eşleşmeli
-embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olmadan 7 saniyede
-çalışır. GitHub Actions her pull request'te ruff'ı ve testleri pgvector'lü bir servis
-konteynerine karşı çalıştırır; veritabanına ulaşılamazsa testler atlanmaz, başarısız olur.
+embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olmadan çalışır.
+
+| Test dosyası | Test | Ne doğruluyor |
+|---|---|---|
+| `test_farkli_yoldan` | 611 | Her hat × ay × arıza tipi, her gün, her stok kodu ve makine için API ve araç sonucu, SQL kullanmadan Python'da hesaplanan sonuçla aynı |
+| `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
+| `test_guvenlik_matrisi` | 143 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
+| `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
+| `test_arac_girdileri` | 76 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
+| `test_api_dogrulama` | 49 | Geçersiz her istek 422, asla 500 değil |
+| `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
+| `test_ozellikler` | 10 | Hypothesis ile her biri 300 rastgele girdi: parçalama, token, tarih filtresi, sayı eşleştirme |
+| diğerleri | 137 | API, agent döngüsü, giriş, RAG, seed, değerlendirme setinin tutarlılığı |
+
+Testlerin bulduğu iki gerçek hata düzeltildi: token'sız `/chat` isteğinin 401 yerine 503 dönmesi
+(giriş yapmamış biri sunucunun ayar durumunu öğrenebiliyordu) ve girdide NUL baytının
+PostgreSQL'de 500 hatasına dönüşmesi. GitHub Actions her pull request'te ruff'ı ve testleri
+pgvector'lü bir servis konteynerine karşı çalıştırır; veritabanına ulaşılamazsa testler
+atlanmaz, başarısız olur.
+
+Ayrıca iki inceleme yapıldı: güvenlik incelemesi (doğrulanmış açık bulunmadı; önerilen
+sertleştirmeyle veritabanı ve API portları yalnızca `127.0.0.1`'e bağlandı) ve arayüz
+yönergeleri denetimi (erişilebilirlik, odak, hareket azaltma, form davranışı; bulgular
+düzeltildi).
 
 Her iş kendi branch'inde geliştirildi ve pull request ile birleştirildi:
 [#1 iskelet](https://github.com/omer1916/andon/pull/1) ·
@@ -255,13 +299,15 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           137 test
+tests/           1572 test
 ```
 
 ## Bilinen eksikler
 
-- **Agent değerlendirmesi gerçek LLM ile henüz çalıştırılmadı.** Set, değerlendirici ve testleri
-  hazır; anahtar eklenince tek komutla çalışır.
+- **Değerlendirme seti küçük ve düzeltmeler ona bakılarak yapıldı.** 30/30 iyimser; görülmemiş
+  sorulardan oluşan ikinci bir set gerekiyor.
+- **Demo parolası varsayılan olarak bilinen bir değer.** Portlar yalnızca bu makineye açık;
+  uygulamayı ağa açmadan önce `.env`'de `DEMO_PAROLA` değiştirilmeli (açılış günlüğü uyarır).
 - **Türkçe karakter kullanılmadan yazılan sorularda arama zayıflıyor** (isabet@1 %95'ten %75'e
   iniyor). Çözüm adayı: vektör aramasını PostgreSQL tam metin araması + `unaccent` ile birleştiren
   hibrit arama.

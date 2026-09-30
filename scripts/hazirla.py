@@ -16,7 +16,7 @@ from datetime import datetime
 import psycopg
 from psycopg import sql
 
-from app.ayarlar import ayarlar
+from app.ayarlar import Ayarlar, ayarlar
 from app.db import TZ, baglan
 from app.embedding import varsayilan_embedder
 from scripts import ingest, seed
@@ -49,6 +49,12 @@ def main() -> None:
 
     if seed_gerekli:
         print("Operasyon verisi yok; sahte veri üretiliyor...", flush=True)
+        if ayarlar().demo_parola == Ayarlar.model_fields["demo_parola"].default:
+            print(
+                "UYARI: Demo kullanıcılar varsayılan parolayla oluşturuluyor. Uygulamayı ağa "
+                "açmadan önce .env'de DEMO_PAROLA'yı değiştirin.",
+                flush=True,
+            )
         veri = seed.veri_uret(datetime.now(TZ).replace(second=0, microsecond=0))
         with baglan() as conn:
             seed.veritabanina_yaz(conn, veri)

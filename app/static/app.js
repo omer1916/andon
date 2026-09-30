@@ -100,11 +100,19 @@ function girisHatasiGoster(metin) {
 $("giris-formu").addEventListener("submit", async (olay) => {
   olay.preventDefault();
   const form = olay.currentTarget;
+  const dugme = $("giris-dugmesi");
   girisHatasiGoster("");
+  dugme.disabled = true;
+  dugme.textContent = "Giriş yapılıyor…";
   try {
     const cevap = await fetch("/giris", { method: "POST", body: new URLSearchParams(new FormData(form)) });
     if (!cevap.ok) {
-      girisHatasiGoster(cevap.status === 401 ? "Kullanıcı adı veya parola hatalı." : "Giriş yapılamadı.");
+      girisHatasiGoster(
+        cevap.status === 401
+          ? "Kullanıcı adı veya parola hatalı. Parola .env dosyasındaki DEMO_PAROLA."
+          : "Giriş yapılamadı; biraz sonra tekrar deneyin.",
+      );
+      form.elements.password.select();
       return;
     }
     const veri = await cevap.json();
@@ -112,7 +120,10 @@ $("giris-formu").addEventListener("submit", async (olay) => {
     form.reset();
     ekraniGoster();
   } catch {
-    girisHatasiGoster("Sunucuya ulaşılamadı.");
+    girisHatasiGoster("Sunucuya ulaşılamadı; uygulamanın çalıştığını kontrol edin.");
+  } finally {
+    dugme.disabled = false;
+    dugme.textContent = "Giriş yap";
   }
 });
 
@@ -154,7 +165,7 @@ async function sor(metin) {
 
   mesajEkle("kullanici").append(eleman("p", null, soru));
   const bekleme = mesajEkle("asistan bekliyor");
-  bekleme.append(eleman("span", "dusunuyor", "Kayıtlara ve kılavuzlara bakıyorum"));
+  bekleme.append(eleman("span", "dusunuyor", "Kayıtlara ve kılavuzlara bakıyorum…"));
 
   try {
     const cevap = await api("/chat", {
@@ -168,7 +179,9 @@ async function sor(metin) {
     else hataMesaji(hataMetni(cevap.status, veri.detail));
   } catch (hata) {
     bekleme.remove();
-    if (!(hata instanceof OturumBitti)) hataMesaji("Sunucuya ulaşılamadı.");
+    if (!(hata instanceof OturumBitti)) {
+      hataMesaji("Sunucuya ulaşılamadı; bağlantıyı kontrol edip soruyu tekrar gönderin.");
+    }
   } finally {
     bekleniyor = false;
     $("gonder").disabled = false;
@@ -179,14 +192,16 @@ async function sor(metin) {
 function hataMetni(durum, ayrinti) {
   if (typeof ayrinti === "string") return ayrinti;
   if (durum === 422) return "Soru geçersiz; 2 ile 2000 karakter arasında olmalı.";
-  return `Bir hata oluştu (HTTP ${durum}).`;
+  return `Bir hata oluştu (HTTP ${durum}); soruyu tekrar gönderin, sürerse yöneticiye bildirin.`;
 }
+
+const hareketAzalt = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 function mesajEkle(tur) {
   const mesaj = eleman("li", `mesaj ${tur}`);
   $("mesajlar").append(mesaj);
   bosDurumuGuncelle();
-  mesaj.scrollIntoView({ behavior: "smooth", block: "end" });
+  mesaj.scrollIntoView({ behavior: hareketAzalt.matches ? "auto" : "smooth", block: "end" });
   return mesaj;
 }
 
@@ -262,7 +277,7 @@ async function pdfAc(kod, sayfa) {
     $("pdf-cerceve").src = adres;
     $("pdf-gorunumu").showModal();
   } catch (hata) {
-    if (!(hata instanceof OturumBitti)) hataMesaji(`${kod} açılamadı.`);
+    if (!(hata instanceof OturumBitti)) hataMesaji(`${kod} açılamadı; kaynağa tekrar tıklayın.`);
   }
 }
 

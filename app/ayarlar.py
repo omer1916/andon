@@ -13,7 +13,7 @@ class Ayarlar(BaseSettings):
         env_file=ENV_DOSYASI, env_file_encoding="utf-8", extra="ignore"
     )
 
-    database_url: str = "postgresql://andon:andon@localhost:5432/andon"
+    database_url: str = "postgresql://andon:andon@127.0.0.1:5432/andon"
 
     llm_saglayici: Literal["gemini", "ollama"] = "gemini"
     llm_model: str | None = None  # boşsa sağlayıcının varsayılan modeli
