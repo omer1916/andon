@@ -22,3 +22,23 @@ Geliştirme aşamasında. Haftalık plan:
 - [ ] Hafta 4: LLM ve agent
 - [ ] Hafta 5: Güvenlik ve kalite
 - [ ] Hafta 6: Arayüz ve sunum
+
+## Geliştirme ortamı
+
+Gerekenler: Python 3.12, Git, Docker Desktop.
+
+```bash
+py -3.12 -m venv .venv
+.venv\Scripts\activate        # Linux/macOS: source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Kontroller:
+
+```bash
+ruff check .
+ruff format --check .
+pytest
+```
+
+Her iş kendi branch'inde yapılır ve `main`'e pull request ile birleşir.
