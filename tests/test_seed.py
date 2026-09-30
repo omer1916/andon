@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from scripts.seed import GUN_SAYISI, TZ, veri_uret
+from app.db import TZ
+from scripts.seed import GUN_SAYISI, veri_uret
 
 SON_AN = datetime(2026, 9, 30, 12, 0, tzinfo=TZ)
 
