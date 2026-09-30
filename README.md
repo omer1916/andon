@@ -19,7 +19,7 @@ Geliştirme aşamasında. Haftalık plan:
 - [x] Hafta 1: Veritabanı ve sahte veri
 - [x] Hafta 2: API
 - [x] Hafta 3: RAG
-- [ ] Hafta 4: LLM ve agent
+- [x] Hafta 4: LLM ve agent (gerçek Gemini ile demo doğrulaması API anahtarı bekliyor)
 - [ ] Hafta 5: Güvenlik ve kalite
 - [ ] Hafta 6: Arayüz ve sunum
 
@@ -162,3 +162,53 @@ metin araması + `unaccent` ile birleştiren hibrit arama.
 
 Testler gerçek model yerine kelime eşleşmesine dayalı sahte bir embedder kullanır. Böylece model
 indirmeden arama akışını ve SQL'i test ederler; anlamsal kaliteyi `arama_olc.py` ölçer.
+
+## Agent
+
+`POST /chat` soruyu LLM'e, kullanabileceği araçların listesiyle birlikte gönderir. LLM araç
+çağırdıkça agent aracı çalıştırıp sonucu geri verir; LLM son cevabı yazana kadar (en fazla 6
+adım) döngü sürer.
+
+| Araç | Ne yapar |
+|---|---|
+| `ariza_say(hat, baslangic, bitis, ariza_tipi)` | Arıza sayısı; tiplere ve makinelere göre dağılım |
+| `dokuman_ara(soru, k)` | Kılavuzlarda anlamsal arama; doküman kodu ve sayfa numarasıyla |
+| `stok_sorgula(parca_kodu, sadece_kritik)` | Yedek parça miktarı, yeri, kritik seviye |
+| `bakim_talebi_olustur(makine_kodu, aciklama, oncelik)` | Bakım talebi açar, numarasını döner |
+
+**LLM'e serbest SQL yazdırılmıyor.** Yalnızca bu dört parametreli fonksiyonu çağırabiliyor:
+
+- Veritabanına giden her değer SQL parametresi; LLM ne yazarsa yazsın bir tabloyu silemez,
+  başka bir tabloyu okuyamaz.
+- Her aracın girdisi bir Pydantic modeliyle doğrulanır; LLM'e verilen JSON şeması da aynı
+  modelden üretilir.
+- Hatalar LLM'in okuyup düzeltebileceği mesajlar olarak döner: "'Pres 9' adında bir hat yok.
+  Geçerli hatlar: Pres 1, ...". Böylece LLM argümanı düzeltip yeniden deneyebilir.
+- Yazma yapan tek araç `bakim_talebi_olustur`. Sistem istemi onu yalnızca kullanıcı açıkça
+  isterse çağırmasını söyler; kod ise bir istekte en fazla bir talep açılmasına izin verir.
+- "Geçen ay" gibi ifadeler için LLM'e sistem isteminde bugünün tarihi verilir; tarihi LLM
+  somut bir aralığa çevirir, sayımı veritabanı yapar.
+
+**Model:** Gemini (`gemini-3.8-flash`), OpenAI uyumlu uç noktası üzerinden. Ollama da aynı
+arayüzü sunduğu için tek bir kod yolu ikisiyle de çalışır:
+
+```bash
+# .env
+LLM_SAGLAYICI=gemini          # ya da ollama
+GEMINI_API_KEY=...            # https://aistudio.google.com/apikey
+# LLM_MODEL=gemini-3.5-flash-lite
+```
+
+```bash
+python scripts/sor.py "Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?"
+```
+
+**Kayıt:** Her istek `llm_istekleri` tablosuna yazılır: kullanıcı, model, soru, cevap, çağrılan
+araçlar, adım sayısı, girdi/çıktı token'ı, maliyet ve süre. İstek yarıda hata verse bile
+(kota, ağ) o ana kadar harcanan token'lar kaydedilir. `GET /kullanim` toplamları, ortalama ve
+p95 süreyi döner. Maliyet, ücretli katman liste fiyatıyla hesaplanır; ücretsiz katmanda gerçek
+maliyet 0'dır.
+
+Testler gerçek LLM yerine senaryolu sahte bir LLM kullanır ("önce şu araçları çağır, sonra şu
+cevabı ver"). Döngü, araç doğrulaması, hata mesajları, token toplamı ve kayıt böylece API
+anahtarı olmadan test edilir.
