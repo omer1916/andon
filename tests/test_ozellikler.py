@@ -5,6 +5,7 @@ her testte yüzlerce rastgele girdi üretip kuralı bozmaya çalışır, bozan e
 raporlar.
 """
 
+import re
 import string
 from datetime import date
 
@@ -79,9 +80,9 @@ def test_vektor_metni_geri_okunabilir(vektor):
 @AYAR
 @given(st.integers(0, 10**7), st.text(max_size=20), st.text(max_size=20))
 def test_sayi_kendi_basina_gectiginde_bulunur(sayi, once, sonra):
-    once = once.rstrip(string.digits + ".,")
-    sonra = sonra.lstrip(string.digits)
-    if sonra[:1] in {".", ","} and sonra[1:2].isdigit():
+    # Uygulamayla aynı rakam tanımı (\d, Unicode rakamlar dahil): "5٣" bağımsız bir 5 değildir.
+    sonra = re.sub(r"^\d+", "", sonra)
+    if re.match(r"[.,]\d", sonra):
         sonra = " " + sonra
     assert sayi_geciyor(f"{once} {sayi}{sonra}", sayi)
 

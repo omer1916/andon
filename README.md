@@ -70,7 +70,7 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (1572 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (1573 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Tasarım kararları
@@ -213,7 +213,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 1572 test (~30 sn); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 1573 test (~30 sn); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -232,7 +232,7 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_api_dogrulama` | 49 | Geçersiz her istek 422, asla 500 değil |
 | `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
 | `test_ozellikler` | 10 | Hypothesis ile her biri 300 rastgele girdi: parçalama, token, tarih filtresi, sayı eşleştirme |
-| diğerleri | 137 | API, agent döngüsü, giriş, RAG, seed, değerlendirme setinin tutarlılığı |
+| diğerleri | 138 | API, agent döngüsü, giriş, RAG, seed, değerlendirme setinin tutarlılığı |
 
 Testlerin bulduğu iki gerçek hata düzeltildi: token'sız `/chat` isteğinin 401 yerine 503 dönmesi
 (giriş yapmamış biri sunucunun ayar durumunu öğrenebiliyordu) ve girdide NUL baytının
@@ -299,7 +299,7 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           1572 test
+tests/           1573 test
 ```
 
 ## Bilinen eksikler

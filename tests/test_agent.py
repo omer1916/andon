@@ -196,6 +196,24 @@ def test_llm_hatasinda_kismi_sonuc_korunur(baglam):
     assert satir[0] == 100 and "bağlantı koptu" in satir[1]
 
 
+def test_llm_argumaninda_nul_kaydi_ve_cevabi_bozmaz(baglam):
+    # Model bozuk bir argüman üretse bile (NUL baytı) cevap kaybolmamalı, kayıt yazılmalı.
+    llm = SenaryoluLLM(
+        arac_iste(
+            ("ariza_say", {"hat": "Pres 3\x00", "baslangic": "2026-08-01", "bitis": "2026-08-31"})
+        ),
+        cevap_ver("Tamam.\x00"),
+    )
+    sonuc = sohbet("soru", llm, baglam, simdi=SABIT_AN)
+    assert sonuc.arac_cagrilari[0]["hata"]
+    kayit_id = kaydet(baglam.conn, "soru", "test", "sahte", sonuc)
+    cevap, argumanlar = baglam.conn.execute(
+        "SELECT cevap, arac_cagrilari->0->'argumanlar'->>'hat' FROM llm_istekleri WHERE id = %s",
+        [kayit_id],
+    ).fetchone()
+    assert (cevap, argumanlar) == ("Tamam.", "Pres 3")
+
+
 def test_maliyet_hesabi():
     assert maliyet_hesapla("gemini", "gemini-3.8-flash", 1_000_000, 1_000_000) == pytest.approx(4.5)
     assert maliyet_hesapla("ollama", "qwen3:4b", 5000, 5000) == 0.0

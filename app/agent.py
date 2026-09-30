@@ -159,15 +159,27 @@ def kaydet(
             kullanici,
             saglayici,
             sonuc.model,
-            soru,
-            sonuc.cevap or None,
-            Jsonb(sonuc.arac_cagrilari),
+            _nulsuz(soru),
+            _nulsuz(sonuc.cevap) or None,
+            Jsonb(_nulsuz(sonuc.arac_cagrilari)),
             sonuc.adim_sayisi,
             sonuc.girdi_token,
             sonuc.cikti_token,
             sonuc.maliyet_usd,
             sonuc.sure_ms,
-            sonuc.hata,
+            _nulsuz(sonuc.hata),
         ],
     ).fetchone()
     return satir[0]
+
+
+def _nulsuz(deger):
+    """Metinlerdeki NUL baytlarını atar. PostgreSQL text ve jsonb alanları NUL kabul etmez;
+    LLM'in ürettiği bir argümanda NUL varsa kayıt yazılamaz ve hazır cevap kaybolurdu."""
+    if isinstance(deger, str):
+        return deger.replace("\x00", "")
+    if isinstance(deger, list):
+        return [_nulsuz(d) for d in deger]
+    if isinstance(deger, dict):
+        return {_nulsuz(k): _nulsuz(v) for k, v in deger.items()}
+    return deger
