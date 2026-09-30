@@ -15,7 +15,7 @@ kılavuzlarında (pgvector ile anlamsal arama) arayarak cevaplar ve kaynağını
 
 Geliştirme aşamasında. Haftalık plan:
 
-- [ ] Hafta 0: Kurulum
+- [x] Hafta 0: Kurulum
 - [ ] Hafta 1: Veritabanı ve sahte veri
 - [ ] Hafta 2: API
 - [ ] Hafta 3: RAG
