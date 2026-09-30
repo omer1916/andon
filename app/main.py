@@ -7,13 +7,16 @@ Belgeler: http://localhost:8000/docs  (sağ üstteki "Authorize" ile giriş yap�
 import threading
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 import openai
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import Path as FastAPIPath
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__, agent, rag, sorgular
 from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
@@ -33,7 +36,10 @@ from app.models import (
     SohbetIstegi,
     Token,
 )
+from app.rag import KILAVUZ_KLASORU
 from app.tools import AracBaglami
+
+STATIK_KLASOR = Path(__file__).resolve().parent / "static"
 
 router = APIRouter()
 
@@ -201,6 +207,34 @@ def chat(
 
 
 @router.get(
+    "/dokumanlar/{kod}/pdf",
+    response_class=FileResponse,
+    responses={404: {"description": "Doküman yok ya da rolün görmeye yetkili değil"}},
+    summary="Kılavuzun PDF'i; arayüzdeki kaynak bağlantıları bununla açılır",
+)
+def dokuman_pdf(
+    kod: Annotated[str, FastAPIPath(pattern=r"^[A-Za-z0-9-]{1,32}$")],
+    conn: Baglanti,
+    kullanici: AktifKullanici,
+):
+    dokuman = sorgular.dokuman_getir(conn, kod)
+    # Yetkisiz rol için de 404: dokümanın var olduğu bile anlaşılmasın.
+    if dokuman is None or dokuman["erisim"] not in kullanici.erisim:
+        raise HTTPException(404, "Doküman bulunamadı.")
+    return FileResponse(
+        KILAVUZ_KLASORU / dokuman["dosya"],
+        media_type="application/pdf",
+        content_disposition_type="inline",
+        filename=dokuman["dosya"],
+    )
+
+
+@router.get("/", include_in_schema=False)
+def arayuz():
+    return FileResponse(STATIK_KLASOR / "index.html")
+
+
+@router.get(
     "/kullanim",
     response_model=KullanimOzeti,
     responses={403: {"description": "Yalnızca bakım rolü"}},
@@ -208,6 +242,12 @@ def chat(
 )
 def kullanim(conn: Baglanti, _: Annotated[Kullanici, Depends(rol_gerekli("bakim"))]):
     return sorgular.llm_kullanim_ozeti(conn)
+
+
+async def _veri_hatasi(request: Request, hata: psycopg.DataError) -> JSONResponse:
+    """Kullanıcı girdisi veritabanının kabul etmediği bir değer içeriyorsa (örneğin NUL
+    baytı) 500 yerine 422 dön; iç hata ayrıntısı dışarı sızmasın."""
+    return JSONResponse(status_code=422, content={"detail": "Girdi geçersiz karakter içeriyor."})
 
 
 @asynccontextmanager
@@ -235,7 +275,9 @@ def uygulama_olustur(model_on_yukle: bool = True) -> FastAPI:
         lifespan=lifespan,
     )
     uygulama.state.model_on_yukle = model_on_yukle
+    uygulama.add_exception_handler(psycopg.DataError, _veri_hatasi)
     uygulama.include_router(router)
+    uygulama.mount("/static", StaticFiles(directory=STATIK_KLASOR), name="static")
     return uygulama
 
 

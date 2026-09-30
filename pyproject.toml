@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "faker>=30",  # seed; Docker demo'su ilk açılışta sahte veri üretir
     "fastapi>=0.115",
     "openai>=1.60",  # Gemini ve Ollama'nın OpenAI uyumlu API'si için
     "psycopg[binary]>=3.2",
@@ -26,9 +27,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "faker>=30",
     "fpdf2>=2.8",  # sahte kılavuzların PDF'lerini üretmek için
     "httpx2",  # FastAPI TestClient için
+    "hypothesis>=6",  # özellik tabanlı testler
     "pytest>=8",
     "ruff>=0.6",
 ]

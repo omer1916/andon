@@ -58,7 +58,9 @@ class ArizaSayGirdisi(BaseModel):
 
 class DokumanAraGirdisi(BaseModel):
     soru: str = Field(min_length=3, description="Kılavuzlarda aranacak konu, doğal dille")
-    k: int = Field(3, ge=1, le=5, description="Kaç parça dönsün")
+    # 3 değil 5: iki konulu sorularda (sayı + kural) aranan kural 4.-5. sırada kalabiliyor.
+    # Değerlendirmede "kök neden analizi" kuralı 5. sıradaydı ve k=3 ile kaçırıldı.
+    k: int = Field(5, ge=1, le=8, description="Kaç parça dönsün")
 
 
 class StokSorgulaGirdisi(BaseModel):
@@ -216,3 +218,6 @@ def arac_calistir(ad: str, argumanlar_json: str, baglam: AracBaglami) -> dict:
         return {"sonuc": arac.calistir(baglam, girdi)}
     except AracHatasi as hata:
         return {"hata": str(hata)}
+    except psycopg.DataError:
+        # Örneğin argümanda NUL baytı: veritabanı reddeder; LLM'e düzeltilebilir mesaj dön.
+        return {"hata": "Argüman geçersiz karakter içeriyor."}

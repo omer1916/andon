@@ -22,6 +22,7 @@ Her soruda yalnızca tanımlı kontroller uygulanır (eval/sorular.jsonl):
 
 import argparse
 import json
+import math
 import re
 import statistics
 import sys
@@ -59,6 +60,12 @@ def _normal(metin: str) -> str:
     return metin.replace("İ", "i").replace("I", "ı").lower()
 
 
+def sayi_geciyor(metin: str, sayi: int) -> bool:
+    """Sayı metinde bağımsız bir sayı olarak geçiyor mu: 25 için "25 arıza" ve "**25**" evet,
+    "125", "250", "2,5" ve "25,5" hayır. (Türkçede ondalık ayırıcı virgüldür.)"""
+    return re.search(rf"(?<![\d.,]){sayi}(?![\d]|[.,]\d)", metin) is not None
+
+
 def _son_talep_id(conn: psycopg.Connection) -> int:
     return conn.execute("SELECT coalesce(max(id), 0) FROM bakim_talepleri").fetchone()[0]
 
@@ -72,8 +79,7 @@ def kontrol_et(soru: dict, sonuc: SohbetSonucu, conn: psycopg.Connection, onceki
     if "araclar" in soru:
         k["araclar"] = set(soru["araclar"]) <= {c["ad"] for c in sonuc.arac_cagrilari}
     if "sayi_sql" in soru:
-        beklenen = conn.execute(soru["sayi_sql"]).fetchone()[0]
-        k["sayi"] = re.search(rf"(?<![\d.,]){beklenen}(?![\d.,])", sonuc.cevap) is not None
+        k["sayi"] = sayi_geciyor(sonuc.cevap, conn.execute(soru["sayi_sql"]).fetchone()[0])
     if "metin_sql" in soru:
         k["metin"] = _normal(str(conn.execute(soru["metin_sql"]).fetchone()[0])) in cevap
     if "icermeli" in soru:
@@ -105,7 +111,8 @@ def soruyu_calistir(
 ) -> dict:
     """Soruyu soruyu soranın rolüyle çalıştırır, kaydeder ve kontrol eder.
 
-    Ücretsiz katmanın dakikalık kotasına takılırsa bekleyip yeniden dener.
+    Ücretsiz katmanın dakikalık kotasına (429) ya da sağlayıcının geçici yoğunluğuna (503)
+    takılırsa bekleyip yeniden dener.
     """
     kullanici = Kullanici(KULLANICI, "Değerlendirme", soru["rol"])
     for kalan in range(deneme - 1, -1, -1):
@@ -116,7 +123,8 @@ def soruyu_calistir(
             break
         except SohbetHatasi as hata:
             kaydet(conn, soru["soru"], KULLANICI, llm.saglayici, hata.sonuc)
-            if not isinstance(hata.__cause__, openai.RateLimitError) or kalan == 0:
+            gecici = isinstance(hata.__cause__, openai.RateLimitError | openai.InternalServerError)
+            if not gecici or kalan == 0:
                 raise
             time.sleep(30)
     kaydet(conn, soru["soru"], KULLANICI, llm.saglayici, sonuc)
@@ -129,6 +137,12 @@ def soruyu_calistir(
         "kontroller": kontroller,
         "gecti": all(kontroller.values()),
     }
+
+
+def yuzdelik(degerler: list[float], yuzde: float) -> float:
+    """En yakın sıra yöntemiyle yüzdelik: 30 değerin p95'i 29. değerdir (ceil(0,95 × 30))."""
+    sirali = sorted(degerler)
+    return sirali[max(0, math.ceil(yuzde / 100 * len(sirali)) - 1)]
 
 
 def rapor(sonuclar: list[dict], llm: LLM) -> str:
@@ -158,7 +172,7 @@ def rapor(sonuclar: list[dict], llm: LLM) -> str:
     cikti = sum(s["sonuc"].cikti_token for s in sonuclar)
     maliyetler = [s["sonuc"].maliyet_usd for s in sonuclar]
     maliyet = f"${sum(maliyetler):.4f}" if None not in maliyetler else "bilinmiyor"
-    p95 = sorted(sureler)[max(0, round(0.95 * len(sureler)) - 1)]
+    p95 = yuzdelik(sureler, 95)
     satirlar += [
         "",
         f"- Süre: ortalama {statistics.mean(sureler) / 1000:.1f} sn, p95 {p95 / 1000:.1f} sn",
@@ -207,7 +221,7 @@ def main() -> None:
 
     metin = rapor(sonuclar, llm)
     if not args.sadece:
-        RAPOR_DOSYASI.write_text(metin, encoding="utf-8")
+        RAPOR_DOSYASI.write_text(metin, encoding="utf-8", newline="\n")
         print(f"\nRapor: {RAPOR_DOSYASI.relative_to(KOK)}")
     print(metin.split("\n\n| Soru")[0])
 

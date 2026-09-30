@@ -17,11 +17,9 @@ import psycopg
 
 from app.db import baglan
 from app.embedding import Embedder, varsayilan_embedder
-from app.rag import embedding_metni, parcala, pdf_sayfalari, vektor_metni
+from app.rag import KILAVUZ_KLASORU, embedding_metni, parcala, pdf_sayfalari, vektor_metni
 
-KOK = Path(__file__).resolve().parent.parent
-KILAVUZ_KLASORU = KOK / "data" / "kilavuzlar"
-SEMA_DOSYASI = KOK / "sql" / "dokumanlar.sql"
+SEMA_DOSYASI = Path(__file__).resolve().parent.parent / "sql" / "dokumanlar.sql"
 
 
 def kilavuzlari_oku(klasor: Path = KILAVUZ_KLASORU) -> list[dict]:

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171a20" media="(prefers-color-scheme: dark)">
+  <title>Andon · Fabrika Asistanı</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='5' y='0' width='6' height='16' rx='2' fill='%23222'/%3E%3Ccircle cx='8' cy='3.5' r='2' fill='%2316a34a'/%3E%3Ccircle cx='8' cy='8' r='2' fill='%23eab308'/%3E%3Ccircle cx='8' cy='12.5' r='2' fill='%23dc2626'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <a class="atla" href="#ana-icerik">Ana içeriğe geç</a>
+  <header class="ust">
+    <div class="marka">
+      <span class="isiklar" aria-hidden="true"><i class="yesil"></i><i class="sari"></i><i class="kirmizi"></i></span>
+      <strong translate="no">Andon</strong>
+      <span class="alt-baslik">Fabrika asistanı</span>
+    </div>
+    <div class="oturum" id="oturum" hidden>
+      <span class="kim"><span id="ad-soyad"></span> <span class="rol" id="rol"></span></span>
+      <button type="button" class="metin-dugme" id="cikis">Çıkış</button>
+    </div>
+  </header>
+
+  <main id="ana-icerik" tabindex="-1">
+    <section id="giris-ekrani" class="giris" hidden>
+      <form id="giris-formu" class="kart">
+        <h1>Giriş</h1>
+        <p class="soluk">Demo kullanıcılar: <code>operator</code> ve <code>bakim</code>. Parola
+          <code>.env</code> dosyasındaki <code>DEMO_PAROLA</code>.</p>
+        <label>Kullanıcı adı
+          <input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+        </label>
+        <label>Parola
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p class="hata-metni" id="giris-hatasi" role="alert" hidden></p>
+        <button type="submit" class="ana-dugme" id="giris-dugmesi">Giriş yap</button>
+      </form>
+    </section>
+
+    <section id="sohbet-ekrani" class="sohbet" hidden>
+      <div id="bos-durum" class="bos-durum">
+        <h1>Ne öğrenmek istiyorsun?</h1>
+        <p class="soluk">Arıza kayıtlarını, yedek parça stoğunu ve bakım kılavuzlarını birlikte
+          sorgulayabilirsin. Kılavuzdan gelen her bilgi sayfa numarasıyla gösterilir.</p>
+        <div class="ornekler" id="ornekler"></div>
+      </div>
+      <ol id="mesajlar" class="mesajlar" aria-live="polite"></ol>
+      <form id="soru-formu" class="soru-formu">
+        <textarea id="soru" name="soru" rows="1" maxlength="2000" required autocomplete="off"
+                  placeholder="Örn. Pres 3'te bu hafta kaç arıza oldu…" aria-label="Soru"
+                  aria-describedby="soru-ipucu"></textarea>
+        <span id="soru-ipucu" class="gorunmez">Göndermek için Enter, yeni satır için Shift+Enter.</span>
+        <button type="submit" class="ana-dugme" id="gonder">Sor</button>
+      </form>
+    </section>
+  </main>
+
+  <dialog id="pdf-gorunumu" class="pdf-gorunumu" aria-labelledby="pdf-baslik">
+    <div class="pdf-ust">
+      <strong id="pdf-baslik"></strong>
+      <a id="pdf-yeni-sekme" target="_blank" rel="noopener">Yeni sekmede aç</a>
+      <form method="dialog"><button class="metin-dugme" autofocus>Kapat</button></form>
+    </div>
+    <iframe id="pdf-cerceve" title="Kılavuz sayfası"></iframe>
+  </dialog>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>
