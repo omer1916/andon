@@ -11,6 +11,7 @@ Veride bilerek bırakılmış desenler var, sorgu yazarken bunları bulabilmelis
 - Pres 3'ün hidrolik presinde (P3-HP) son iki ayda arızalar artıyor.
 - Hafta sonu, özellikle pazar, üretim az olduğu için arıza da az.
 - Birkaç yedek parça minimum stok seviyesinin altında.
+- Seed anında 3 arıza hâlâ sürüyor; biri Pres 3'ü durdurmuş durumda.
 """
 
 import argparse
@@ -111,6 +112,14 @@ HAT_DURMA_OLASILIGI = {"dusuk": 0.15, "orta": 0.6, "yuksek": 1.0}
 
 TEMEL_ARIZA_ORANI = 0.12  # hafta içi, makine başına günlük beklenen arıza sayısı
 GUN_CARPANI = {5: 0.6, 6: 0.2}  # cumartesi, pazar
+
+# Seed anında süren arızalar, "şu an hangi makineler arızalı?" sorusu boş dönmesin diye.
+# (makine kodu, arıza tipi, önem, kaç dakika önce başladığı)
+SUREN_ARIZALAR = [
+    ("P3-HP", "hidrolik", "yuksek", 95),
+    ("K2-KR1", "yazilim", "orta", 40),
+    ("B1-BK", "pnomatik", "dusuk", 15),
+]
 
 # (parça kodu, ad, kategori, miktar, min. miktar, birim, konum)
 STOK = [
@@ -257,6 +266,19 @@ def veri_uret(son_an: datetime, tohum: int = 42) -> dict[str, list[Kayit]]:
                         "aciklama": rng.choice(ARIZA_ACIKLAMALARI[tip]),
                     }
                 )
+    makine_kodlari = {m["kod"]: m["id"] for m in makineler}
+    for kod, tip, onem, dakika_once in SUREN_ARIZALAR:
+        arizalar.append(
+            {
+                "makine_id": makine_kodlari[kod],
+                "baslangic": son_an - timedelta(minutes=dakika_once),
+                "bitis": None,
+                "ariza_tipi": tip,
+                "onem": onem,
+                "hat_durdu": onem == "yuksek",
+                "aciklama": ARIZA_ACIKLAMALARI[tip][0],
+            }
+        )
     arizalar = _numarala(arizalar, "baslangic")
 
     is_emirleri: list[Kayit] = []

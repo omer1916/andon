@@ -64,5 +64,11 @@ def test_en_cok_ariza_pres_3te(veri):
     assert sayac.most_common(1)[0][0] == "Pres 3"
 
 
+def test_seed_aninda_suren_arizalar_var(veri):
+    suren = [a for a in veri["ariza_kayitlari"] if a["bitis"] is None]
+    assert len(suren) >= 3
+    assert any(a["hat_durdu"] for a in suren)
+
+
 def test_minimum_stok_altinda_parca_var(veri):
     assert any(s["miktar"] < s["min_miktar"] for s in veri["stok"])
