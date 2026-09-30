@@ -41,6 +41,17 @@ class E5Embedder:
         return self._model.encode(f"query: {soru}", normalize_embeddings=True).tolist()
 
 
+class TembelEmbedder:
+    """Modeli ilk kullanımda yükler. Agent'ın dokuman_ara'yı çağırmadığı bir soru için
+    (örneğin yalnızca arıza sayısı) model yüklemesi beklenmez."""
+
+    def pasajlari_vektorle(self, metinler: list[str]) -> list[list[float]]:
+        return varsayilan_embedder().pasajlari_vektorle(metinler)
+
+    def soruyu_vektorle(self, soru: str) -> list[float]:
+        return varsayilan_embedder().soruyu_vektorle(soru)
+
+
 _kilit = threading.Lock()
 _embedder: E5Embedder | None = None
 

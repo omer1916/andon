@@ -9,14 +9,28 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import openai
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from app import __version__, rag, sorgular
+from app import __version__, agent, rag, sorgular
+from app.ayarlar import ayarlar
 from app.db import havuz_olustur
-from app.embedding import Embedder, varsayilan_embedder
-from app.models import AramaIstegi, AramaSonucu, ArizaFiltresi, ArizaListesi, Hat, Saglik
+from app.embedding import Embedder, TembelEmbedder, varsayilan_embedder
+from app.llm import LLM, LLMAyarHatasi, llm_olustur
+from app.models import (
+    AramaIstegi,
+    AramaSonucu,
+    ArizaFiltresi,
+    ArizaListesi,
+    Hat,
+    KullanimOzeti,
+    Saglik,
+    SohbetCevabi,
+    SohbetIstegi,
+)
+from app.tools import AracBaglami
 
 router = APIRouter()
 
@@ -31,7 +45,30 @@ Baglanti = Annotated[psycopg.Connection, Depends(baglanti)]
 
 def embedder_getir() -> Embedder:
     """Testler bunu sahte bir embedder'la değiştirir; model indirmeden çalışırlar."""
-    return varsayilan_embedder()
+    return TembelEmbedder()
+
+
+def llm_getir() -> LLM:
+    """Testler bunu senaryolu sahte bir LLM'le değiştirir."""
+    try:
+        return llm_olustur(ayarlar())
+    except LLMAyarHatasi as hata:
+        raise HTTPException(503, str(hata)) from None
+
+
+def _llm_hatasi(hata: BaseException) -> HTTPException | None:
+    """LLM sağlayıcısının hatasını kullanıcıya anlamlı bir HTTP hatasına çevirir."""
+    if isinstance(hata, openai.RateLimitError):
+        return HTTPException(429, "LLM kota sınırına ulaşıldı; biraz sonra tekrar deneyin.")
+    if isinstance(hata, openai.AuthenticationError | openai.PermissionDeniedError):
+        return HTTPException(
+            502, "LLM anahtarı geçersiz ya da yetkisiz; .env'deki anahtarı kontrol edin."
+        )
+    if isinstance(hata, openai.APIConnectionError):
+        return HTTPException(502, "LLM sağlayıcısına ulaşılamadı (Ollama çalışıyor mu?).")
+    if isinstance(hata, openai.APIError):
+        return HTTPException(502, f"LLM sağlayıcısı hata verdi: {hata}")
+    return None
 
 
 @router.get(
@@ -85,6 +122,61 @@ def ara(
         raise HTTPException(
             503, "Kılavuzlar henüz yüklenmemiş; önce 'python scripts/ingest.py' çalıştırın."
         ) from None
+
+
+@router.post(
+    "/chat",
+    response_model=SohbetCevabi,
+    responses={
+        429: {"description": "LLM kota sınırı"},
+        502: {"description": "LLM sağlayıcısı hatası"},
+        503: {"description": "LLM ayarlı değil"},
+    },
+    summary="Asistana soru sor; agent veritabanı ve kılavuz araçlarını kullanarak cevaplar",
+)
+def chat(
+    istek: SohbetIstegi,
+    conn: Baglanti,
+    embedder: Annotated[Embedder, Depends(embedder_getir)],
+    llm: Annotated[LLM, Depends(llm_getir)],
+):
+    kullanici = "anonim"  # 5. haftada JWT'deki kullanıcı adı olacak
+    baglam = AracBaglami(conn=conn, embedder=embedder, kullanici=kullanici)
+    try:
+        sonuc = agent.sohbet(istek.soru, llm, baglam)
+    except agent.SohbetHatasi as hata:
+        agent.kaydet(conn, istek.soru, kullanici, llm.saglayici, hata.sonuc)
+        http_hatasi = _llm_hatasi(hata.__cause__)
+        if http_hatasi is None:
+            raise hata.__cause__ from None
+        raise http_hatasi from None
+    agent.kaydet(conn, istek.soru, kullanici, llm.saglayici, sonuc)
+
+    kaynaklar = {}
+    for parca in sonuc.kaynaklar:
+        kaynaklar.setdefault((parca["dokuman_kodu"], parca["sayfa"]), parca)
+    return SohbetCevabi(
+        cevap=sonuc.cevap,
+        kaynaklar=list(kaynaklar.values()),
+        arac_cagrilari=sonuc.arac_cagrilari,
+        kullanim={
+            "model": sonuc.model,
+            "adim_sayisi": sonuc.adim_sayisi,
+            "girdi_token": sonuc.girdi_token,
+            "cikti_token": sonuc.cikti_token,
+            "maliyet_usd": sonuc.maliyet_usd,
+            "sure_ms": sonuc.sure_ms,
+        },
+    )
+
+
+@router.get(
+    "/kullanim",
+    response_model=KullanimOzeti,
+    summary="Agent isteklerinin toplam token, maliyet ve süre özeti",
+)
+def kullanim(conn: Baglanti):
+    return sorgular.llm_kullanim_ozeti(conn)
 
 
 @asynccontextmanager
