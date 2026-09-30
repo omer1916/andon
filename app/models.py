@@ -59,5 +59,25 @@ class ArizaListesi(BaseModel):
     arizalar: list[Ariza]
 
 
+class AramaIstegi(BaseModel):
+    """`GET /ara` sorgu parametreleri."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    soru: str = Field(min_length=3, max_length=500, examples=["pres hattı arıza ilk kontrol"])
+    k: int = Field(3, ge=1, le=10, description="Kaç parça dönsün")
+
+
+class AramaSonucu(BaseModel):
+    dokuman_kodu: str = Field(examples=["PRES-BK-01"])
+    dokuman_basligi: str
+    sayfa: int
+    bolum: str | None = Field(
+        description="Başlık yolu, örn. '4. HİDROLİK ... > 4.1 Genel yaklaşım'"
+    )
+    icerik: str
+    benzerlik: float = Field(description="Kosinüs benzerliği; 1'e yakın olan daha alakalı")
+
+
 class Saglik(BaseModel):
     veritabani: bool

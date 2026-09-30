@@ -125,13 +125,38 @@ def test_gecersiz_parametre_422(istemci, parametreler):
     assert istemci.get("/arizalar", params=parametreler).status_code == 422
 
 
+def test_ara_sayfa_numarasiyla_doner(istemci):
+    # Testlerde sahte (kelime eşleşmeli) embedder var; kılavuzdaki ifadeyi aynen arıyoruz.
+    soru = "panelde okunan basınç değeri mekanik manometrenin gösterdiği değerle karşılaştırılır"
+    cevap = istemci.get("/ara", params={"soru": soru})
+    assert cevap.status_code == 200
+    sonuclar = cevap.json()
+    assert len(sonuclar) == 3
+    assert (sonuclar[0]["dokuman_kodu"], sonuclar[0]["sayfa"]) == ("PRES-BK-01", 4)
+    assert sonuclar[0]["bolum"].endswith("4.1 Genel yaklaşım")
+    benzerlikler = [s["benzerlik"] for s in sonuclar]
+    assert benzerlikler == sorted(benzerlikler, reverse=True)
+
+
+def test_ara_k_kadar_sonuc_doner(istemci):
+    assert len(istemci.get("/ara", params={"soru": "kaynak robotu", "k": 5}).json()) == 5
+
+
+@pytest.mark.parametrize(
+    "parametreler",
+    [{"soru": "ab"}, {"soru": "kaynak", "k": 0}, {"soru": "kaynak", "k": 11}, {}],
+)
+def test_ara_gecersiz_parametre_422(istemci, parametreler):
+    assert istemci.get("/ara", params=parametreler).status_code == 422
+
+
 class _UlasilamayanHavuz:
     def connection(self, timeout=None):
         raise PoolTimeout("veritabanına ulaşılamıyor")
 
 
 def test_veritabani_yoksa_saglik_503():
-    uygulama = uygulama_olustur()
+    uygulama = uygulama_olustur(model_on_yukle=False)
     uygulama.state.havuz = _UlasilamayanHavuz()
     # `with` kullanmıyoruz: lifespan çalışmaz, gerçek havuz hiç açılmaz.
     cevap = TestClient(uygulama).get("/saglik")

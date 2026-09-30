@@ -8,7 +8,10 @@ Veritabanına ulaşılamazsa bu testler atlanır. ANDON_DB_ZORUNLU=1 verilirse a
 hata verir; CI'da testlerin sessizce atlanmaması için.
 """
 
+import math
 import os
+import re
+import zlib
 from datetime import datetime
 
 import psycopg
@@ -18,13 +21,37 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app.db import BAGLANTI_ZAMAN_ASIMI, TZ
-from app.main import uygulama_olustur
+from app.embedding import BOYUT
+from app.main import embedder_getir, uygulama_olustur
+from scripts.ingest import dokumanlari_yaz, kilavuzlari_oku
 from scripts.seed import veri_uret, veritabanina_yaz
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://andon:andon@localhost:5432/andon_test"
 )
 SABIT_AN = datetime(2026, 9, 30, 12, 0, tzinfo=TZ)
+
+
+class SahteEmbedder:
+    """Model indirmeden çalışan, kelime eşleşmesine dayalı deterministik embedder.
+
+    Her kelime sabit bir boyuta düşer (kelime torbası). Anlamı değil ortak kelimeleri yakalar;
+    arama akışını ve SQL'i test etmek için yeterli. Anlamsal kalite scripts/arama_olc.py
+    ile gerçek modelle ölçülür.
+    """
+
+    def _vektor(self, metin: str) -> list[float]:
+        vektor = [0.0] * BOYUT
+        for kelime in re.findall(r"\w+", metin.lower()):
+            vektor[zlib.crc32(kelime.encode()) % BOYUT] += 1.0
+        uzunluk = math.sqrt(sum(x * x for x in vektor)) or 1.0
+        return [x / uzunluk for x in vektor]
+
+    def pasajlari_vektorle(self, metinler: list[str]) -> list[list[float]]:
+        return [self._vektor(m) for m in metinler]
+
+    def soruyu_vektorle(self, soru: str) -> list[float]:
+        return self._vektor(soru)
 
 
 def _veritabanini_olustur(url: str) -> None:
@@ -46,6 +73,7 @@ def test_veritabani(test_verisi):
         _veritabanini_olustur(TEST_DB_URL)
         with psycopg.connect(TEST_DB_URL) as conn:
             veritabanina_yaz(conn, test_verisi)
+            dokumanlari_yaz(conn, kilavuzlari_oku(), SahteEmbedder())
     except psycopg.OperationalError as hata:
         if os.environ.get("ANDON_DB_ZORUNLU") == "1":
             raise
@@ -57,5 +85,7 @@ def test_veritabani(test_verisi):
 def istemci(test_veritabani):
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("DATABASE_URL", test_veritabani)
-        with TestClient(uygulama_olustur()) as istemci:
+        uygulama = uygulama_olustur(model_on_yukle=False)
+        uygulama.dependency_overrides[embedder_getir] = SahteEmbedder
+        with TestClient(uygulama) as istemci:
             yield istemci

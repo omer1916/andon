@@ -13,6 +13,8 @@ dependencies = [
     "fastapi>=0.115",
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",
+    "pypdf>=5",
+    "sentence-transformers>=3",
     "tzdata",  # Windows'ta zoneinfo saat dilimi verisini bu paketten okur
     "uvicorn>=0.30",
 ]
@@ -20,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "faker>=30",
+    "fpdf2>=2.8",  # sahte kılavuzların PDF'lerini üretmek için
     "httpx2",  # FastAPI TestClient için
     "pytest>=8",
     "ruff>=0.6",
