@@ -20,6 +20,11 @@ class Ayarlar(BaseSettings):
     gemini_api_key: str | None = None
     ollama_url: str = "http://localhost:11434/v1"
 
+    # Boşsa süreç başına rastgele bir anahtar üretilir; sunucu yeniden başlayınca oturumlar düşer.
+    jwt_gizli_anahtar: str | None = None
+    # seed.py'nin oluşturduğu demo kullanıcılarının (operator, bakim) parolası
+    demo_parola: str = "andon-demo"
+
 
 def ayarlar() -> Ayarlar:
     """Her çağrıda yeniden okunur; testlerde ortam değişkeni değiştirmek yeterli olsun."""

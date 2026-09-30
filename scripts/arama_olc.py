@@ -19,6 +19,7 @@ import argparse
 import json
 from pathlib import Path
 
+from app.auth import ROL_ERISIMI
 from app.db import baglan
 from app.embedding import varsayilan_embedder
 from app.rag import dokuman_ara
@@ -53,7 +54,9 @@ def main() -> None:
     siralar: list[int | None] = []
     with baglan() as conn:
         for soru in sorular:
-            sonuclar = dokuman_ara(conn, embedder, soru["soru"], args.k)
+            sonuclar = dokuman_ara(
+                conn, embedder, soru["soru"], args.k, erisim=ROL_ERISIMI["bakim"]
+            )
             sira = dogru_sirasi(sonuclar, soru["dogru"])
             siralar.append(sira)
             bulunan = ", ".join(f"{s['dokuman_kodu']}:{s['sayfa']}" for s in sonuclar)

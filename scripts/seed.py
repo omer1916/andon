@@ -25,7 +25,15 @@ import psycopg
 from faker import Faker
 from psycopg import sql
 
+from app.auth import parola_hashle
+from app.ayarlar import ayarlar
 from app.db import TZ, baglan
+
+# (kullanıcı adı, ad soyad, rol)
+DEMO_KULLANICILAR = [
+    ("operator", "Demo Operatör", "operator"),
+    ("bakim", "Demo Bakım Mühendisi", "bakim"),
+]
 
 SEMA_DOSYASI = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
 GUN_SAYISI = 183  # yaklaşık 6 ay
@@ -393,6 +401,16 @@ def veritabanina_yaz(conn: psycopg.Connection, veri: dict[str, list[Kayit]]) -> 
             )
 
 
+def demo_kullanicilari_yaz(conn: psycopg.Connection, parola: str) -> None:
+    """Her rolden bir demo kullanıcı ekler (şema yeniden kurulduğu için tablo boştur)."""
+    with conn.transaction(), conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO kullanicilar (kullanici_adi, ad_soyad, rol, parola_hash) "
+            "VALUES (%s, %s, %s, %s)",
+            [(ad, ad_soyad, rol, parola_hashle(parola)) for ad, ad_soyad, rol in DEMO_KULLANICILAR],
+        )
+
+
 def main() -> None:
     ayrac = argparse.ArgumentParser(description="Veritabanını sahte fabrika verisiyle doldurur.")
     ayrac.add_argument(
@@ -410,12 +428,15 @@ def main() -> None:
     try:
         with baglan() as conn:
             veritabanina_yaz(conn, veri)
+            demo_kullanicilari_yaz(conn, ayarlar().demo_parola)
     except psycopg.OperationalError as hata:
         sys.exit(f"Veritabanına bağlanılamadı. 'docker compose up -d' çalıştı mı?\n{hata}")
 
     print(f"Veri {son_an:%Y-%m-%d %H:%M} anında bitecek şekilde yazıldı:")
     for tablo in TABLOLAR:
         print(f"  {tablo:<16} {len(veri[tablo]):>5} kayıt")
+    kullanicilar = ", ".join(ad for ad, _, _ in DEMO_KULLANICILAR)
+    print(f"Demo kullanıcıları: {kullanicilar} (parola: .env'deki DEMO_PAROLA)")
 
 
 if __name__ == "__main__":

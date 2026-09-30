@@ -1,7 +1,7 @@
 """Andon API.
 
 Çalıştırmak için: uvicorn app.main:app --reload
-Belgeler: http://localhost:8000/docs
+Belgeler: http://localhost:8000/docs  (sağ üstteki "Authorize" ile giriş yapılır)
 """
 
 import threading
@@ -11,10 +11,12 @@ from typing import Annotated
 
 import openai
 import psycopg
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app import __version__, agent, rag, sorgular
+from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
 from app.ayarlar import ayarlar
 from app.db import havuz_olustur
 from app.embedding import Embedder, TembelEmbedder, varsayilan_embedder
@@ -29,6 +31,7 @@ from app.models import (
     Saglik,
     SohbetCevabi,
     SohbetIstegi,
+    Token,
 )
 from app.tools import AracBaglami
 
@@ -86,8 +89,32 @@ def saglik(request: Request):
     return Saglik(veritabani=True)
 
 
+@router.post(
+    "/giris",
+    response_model=Token,
+    responses={401: {"description": "Kullanıcı adı veya parola hatalı"}},
+    summary="Kullanıcı adı ve parolayla giriş; 8 saat geçerli bir erişim token'ı döner",
+)
+def giris(form: Annotated[OAuth2PasswordRequestForm, Depends()], conn: Baglanti):
+    satir = sorgular.kullanici_getir(conn, form.username)
+    if not parola_dogrula(form.password, satir["parola_hash"] if satir else None):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Kullanıcı adı veya parola hatalı.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    kullanici = Kullanici(satir["kullanici_adi"], satir["ad_soyad"], satir["rol"])
+    return Token(
+        access_token=token_uret(kullanici),
+        token_type="bearer",
+        kullanici_adi=kullanici.kullanici_adi,
+        ad_soyad=kullanici.ad_soyad,
+        rol=kullanici.rol,
+    )
+
+
 @router.get("/hatlar", response_model=list[Hat], summary="Üretim hatlarını listeler")
-def hatlar(conn: Baglanti):
+def hatlar(conn: Baglanti, _: AktifKullanici):
     return sorgular.hatlari_getir(conn)
 
 
@@ -97,7 +124,7 @@ def hatlar(conn: Baglanti):
     responses={404: {"description": "Verilen adda hat yok"}},
     summary="Arızaları hat, tarih aralığı ve tipe göre listeler",
 )
-def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti):
+def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti, _: AktifKullanici):
     if filtre.hat is not None and sorgular.hat_adini_bul(conn, filtre.hat) is None:
         gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(conn))
         raise HTTPException(404, f"'{filtre.hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
@@ -109,15 +136,16 @@ def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti):
     "/ara",
     response_model=list[AramaSonucu],
     responses={503: {"description": "Kılavuzlar henüz yüklenmemiş"}},
-    summary="Kılavuzlarda anlamsal arama; sonuçlar sayfa numarasıyla döner",
+    summary="Kılavuzlarda anlamsal arama; yalnızca kullanıcının rolünün görebildiği dokümanlarda",
 )
 def ara(
     istek: Annotated[AramaIstegi, Query()],
     conn: Baglanti,
     embedder: Annotated[Embedder, Depends(embedder_getir)],
+    kullanici: AktifKullanici,
 ):
     try:
-        return rag.dokuman_ara(conn, embedder, istek.soru, istek.k)
+        return rag.dokuman_ara(conn, embedder, istek.soru, istek.k, erisim=kullanici.erisim)
     except psycopg.errors.UndefinedTable:
         raise HTTPException(
             503, "Kılavuzlar henüz yüklenmemiş; önce 'python scripts/ingest.py' çalıştırın."
@@ -136,21 +164,23 @@ def ara(
 )
 def chat(
     istek: SohbetIstegi,
+    # Bağımlılıklar parametre sırasıyla çözülür: kimlik önce doğrulanmalı. Aksi hâlde giriş
+    # yapmamış biri LLM ayarının eksik olduğunu 503 hatasından öğrenebilir.
+    kullanici: AktifKullanici,
     conn: Baglanti,
     embedder: Annotated[Embedder, Depends(embedder_getir)],
     llm: Annotated[LLM, Depends(llm_getir)],
 ):
-    kullanici = "anonim"  # 5. haftada JWT'deki kullanıcı adı olacak
     baglam = AracBaglami(conn=conn, embedder=embedder, kullanici=kullanici)
     try:
         sonuc = agent.sohbet(istek.soru, llm, baglam)
     except agent.SohbetHatasi as hata:
-        agent.kaydet(conn, istek.soru, kullanici, llm.saglayici, hata.sonuc)
+        agent.kaydet(conn, istek.soru, kullanici.kullanici_adi, llm.saglayici, hata.sonuc)
         http_hatasi = _llm_hatasi(hata.__cause__)
         if http_hatasi is None:
             raise hata.__cause__ from None
         raise http_hatasi from None
-    agent.kaydet(conn, istek.soru, kullanici, llm.saglayici, sonuc)
+    agent.kaydet(conn, istek.soru, kullanici.kullanici_adi, llm.saglayici, sonuc)
 
     kaynaklar = {}
     for parca in sonuc.kaynaklar:
@@ -173,9 +203,10 @@ def chat(
 @router.get(
     "/kullanim",
     response_model=KullanimOzeti,
-    summary="Agent isteklerinin toplam token, maliyet ve süre özeti",
+    responses={403: {"description": "Yalnızca bakım rolü"}},
+    summary="Agent isteklerinin toplam token, maliyet ve süre özeti (yalnızca bakım rolü)",
 )
-def kullanim(conn: Baglanti):
+def kullanim(conn: Baglanti, _: Annotated[Kullanici, Depends(rol_gerekli("bakim"))]):
     return sorgular.llm_kullanim_ozeti(conn)
 
 

@@ -18,6 +18,7 @@ import psycopg
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app import rag, sorgular
+from app.auth import Kullanici
 from app.embedding import Embedder
 from app.models import ArizaTipi, Onem
 
@@ -32,9 +33,12 @@ class AracHatasi(Exception):
 
 @dataclass
 class AracBaglami:
+    """Araçların çalıştığı ortam. Kullanıcı (ve dolayısıyla doküman erişimi) token'dan gelir;
+    LLM'in gönderdiği argümanlarda yer almaz, LLM tarafından değiştirilemez."""
+
     conn: psycopg.Connection
     embedder: Embedder
-    kullanici: str
+    kullanici: Kullanici
     kaynaklar: list[dict] = field(default_factory=list)  # dokuman_ara'nın bulduğu parçalar
     acilan_talepler: list[int] = field(default_factory=list)
 
@@ -77,7 +81,7 @@ def _ariza_say(b: AracBaglami, g: ArizaSayGirdisi) -> dict:
 
 
 def _dokuman_ara(b: AracBaglami, g: DokumanAraGirdisi) -> list[dict]:
-    sonuclar = rag.dokuman_ara(b.conn, b.embedder, g.soru, g.k)
+    sonuclar = rag.dokuman_ara(b.conn, b.embedder, g.soru, g.k, erisim=b.kullanici.erisim)
     b.kaynaklar.extend(sonuclar)
     return [
         {
@@ -110,7 +114,7 @@ def _bakim_talebi_olustur(b: AracBaglami, g: BakimTalebiGirdisi) -> dict:
         makine_id=makine["id"],
         aciklama=g.aciklama,
         oncelik=g.oncelik,
-        olusturan=b.kullanici,
+        olusturan=b.kullanici.kullanici_adi,
     )
     b.acilan_talepler.append(talep_id)
     return {"talep_id": talep_id, "makine": makine, "oncelik": g.oncelik, "durum": "acik"}

@@ -13,6 +13,7 @@ import os
 import sys
 
 from app.agent import SohbetHatasi, kaydet, sohbet
+from app.auth import Kullanici
 from app.ayarlar import ayarlar
 from app.db import baglan
 from app.embedding import TembelEmbedder
@@ -26,8 +27,12 @@ def main() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     ayrac = argparse.ArgumentParser(description="Asistana soru sorar.")
     ayrac.add_argument("soru")
+    ayrac.add_argument(
+        "--rol", choices=["operator", "bakim"], default="bakim", help="Kimin gözünden sorulsun"
+    )
     ayrac.add_argument("--ayrinti", action="store_true", help="Araç girdi/çıktılarını göster")
     args = ayrac.parse_args()
+    kullanici = Kullanici(KULLANICI, f"Komut satırı ({args.rol})", args.rol)
 
     try:
         llm = llm_olustur(ayarlar())
@@ -36,7 +41,7 @@ def main() -> None:
 
     with baglan() as conn:
         conn.autocommit = True
-        baglam = AracBaglami(conn=conn, embedder=TembelEmbedder(), kullanici=KULLANICI)
+        baglam = AracBaglami(conn=conn, embedder=TembelEmbedder(), kullanici=kullanici)
         try:
             sonuc = sohbet(args.soru, llm, baglam)
         except SohbetHatasi as hata:

@@ -2,6 +2,7 @@
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,8 +99,20 @@ def vektor_metni(vektor: list[float]) -> str:
     return "[" + ",".join(f"{x:.7f}" for x in vektor) + "]"
 
 
-def dokuman_ara(conn: psycopg.Connection, embedder: Embedder, soru: str, k: int = 3) -> list[dict]:
-    """Soruya anlamca en yakın `k` parçayı, benzerliği yüksekten düşüğe döner."""
+def dokuman_ara(
+    conn: psycopg.Connection,
+    embedder: Embedder,
+    soru: str,
+    k: int = 3,
+    *,
+    erisim: Sequence[str],
+) -> list[dict]:
+    """Soruya anlamca en yakın `k` parçayı, benzerliği yüksekten düşüğe döner.
+
+    Yalnızca erişim seviyesi `erisim` içinde olan dokümanlarda arar. Filtre sıralamadan önce
+    SQL'de uygulanır: yetkisiz bir parça sonuçlara hiç girmez. `erisim` bilerek zorunludur;
+    bir çağıran yetkiyi unutursa her şeyi döndürmek yerine hata alır.
+    """
     vektor = vektor_metni(embedder.soruyu_vektorle(soru))
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -112,9 +125,10 @@ def dokuman_ara(conn: psycopg.Connection, embedder: Embedder, soru: str, k: int 
                    1 - (p.embedding <=> %(vektor)s::vector) AS benzerlik
             FROM dokuman_parcalari p
             JOIN dokumanlar d ON d.id = p.dokuman_id
+            WHERE d.erisim = ANY(%(erisim)s)
             ORDER BY p.embedding <=> %(vektor)s::vector, p.id
             LIMIT %(k)s
             """,
-            {"vektor": vektor, "k": k},
+            {"vektor": vektor, "k": k, "erisim": list(erisim)},
         )
         return cur.fetchall()
