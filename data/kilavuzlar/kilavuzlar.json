@@ -1,0 +1,22 @@
+[
+  {
+    "kod": "PRES-OT-01",
+    "baslik": "Pres Hattı Operatör Talimatı",
+    "erisim": "operasyon"
+  },
+  {
+    "kod": "PRES-BK-01",
+    "baslik": "Pres Hattı Bakım ve Arıza Giderme Kılavuzu",
+    "erisim": "bakim"
+  },
+  {
+    "kod": "KR-BK-01",
+    "baslik": "Kaynak Robotu Bakım Kılavuzu",
+    "erisim": "bakim"
+  },
+  {
+    "kod": "KAL-PR-01",
+    "baslik": "Kalite Kontrol Prosedürü",
+    "erisim": "operasyon"
+  }
+]

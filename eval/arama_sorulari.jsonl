@@ -1,0 +1,20 @@
+{"soru": "Pres hattında hidrolik bir arıza çıktığında ilk olarak neyi kontrol etmeliyim?", "dogru": ["PRES-BK-01:4"]}
+{"soru": "Ekrandaki basınç ile manometredeki basınç arasında fark varsa bu neyi gösterir?", "dogru": ["PRES-BK-01:4", "PRES-BK-01:8"]}
+{"soru": "A101 alarmı veriyor ama sensör sağlam, başka ne sebep olabilir?", "dogru": ["PRES-BK-01:5"]}
+{"soru": "Oransal valfin bobini arızalı mı nasıl anlarım?", "dogru": ["PRES-BK-01:5"]}
+{"soru": "Hidrolik yağ fazla ısınıyor, ne yapmak lazım?", "dogru": ["PRES-BK-01:6", "PRES-OT-01:2"]}
+{"soru": "Presin hidrolik filtresi ne kadar sürede bir değişir?", "dogru": ["PRES-BK-01:3"]}
+{"soru": "Basınç sensörünün çıkış akımını ölçerek sağlam olup olmadığını nasıl test ederim?", "dogru": ["PRES-BK-01:8"]}
+{"soru": "Kalıbın içinde parça sıkıştı, nasıl çıkarılır?", "dogru": ["PRES-BK-01:7", "PRES-OT-01:3"]}
+{"soru": "Pompa motorunda titreşim ölçtüm, hangi değerin üstü rulman bozuk demek?", "dogru": ["PRES-BK-01:7"]}
+{"soru": "Önemli bir arıza yarım saatte çözülemezse kime haber verilir?", "dogru": ["PRES-BK-01:9"]}
+{"soru": "Pres operatörü vardiyaya başlamadan önce neleri kontrol eder?", "dogru": ["PRES-OT-01:1"]}
+{"soru": "Andon butonundaki sarı ve kırmızı ışık ne anlama geliyor?", "dogru": ["PRES-OT-01:2"]}
+{"soru": "Işık perdesi alarm verdi, operatör olarak ne yapmalıyım?", "dogru": ["PRES-OT-01:2", "PRES-BK-01:8"]}
+{"soru": "Robot kaynağında dikişte gaz boşlukları oluşuyor, sebebi ne olabilir?", "dogru": ["KR-BK-01:2"]}
+{"soru": "Kaynak için koruyucu gazın debisi kaç litre olmalı?", "dogru": ["KR-BK-01:1", "KR-BK-01:2"]}
+{"soru": "Kaynak robotu kapatılıp açılınca eksen konumlarını unuttu, neden olur?", "dogru": ["KR-BK-01:3"]}
+{"soru": "Fikstürdeki pnömatik tutucu parçayı sıkmıyor, ne kontrol edilmeli?", "dogru": ["KR-BK-01:4"]}
+{"soru": "Makineye bakım yapıldıktan sonra seri üretime geçmeden ne yapılmalı?", "dogru": ["KAL-PR-01:1", "KAL-PR-01:3"]}
+{"soru": "Boya kalınlığı kaç mikron arasında olmalı?", "dogru": ["KAL-PR-01:2"]}
+{"soru": "Üst üste hatalı parça çıkınca üretimi durdurmam gerekir mi?", "dogru": ["KAL-PR-01:3"]}
