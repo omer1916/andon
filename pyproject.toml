@@ -11,8 +11,10 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "openai>=1.60",  # Gemini ve Ollama'nın OpenAI uyumlu API'si için
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",
+    "pydantic-settings>=2",
     "pypdf>=5",
     "sentence-transformers>=3",
     "tzdata",  # Windows'ta zoneinfo saat dilimi verisini bu paketten okur

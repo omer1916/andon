@@ -79,5 +79,56 @@ class AramaSonucu(BaseModel):
     benzerlik: float = Field(description="Kosinüs benzerliği; 1'e yakın olan daha alakalı")
 
 
+class SohbetIstegi(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    soru: str = Field(
+        min_length=2,
+        max_length=2000,
+        examples=["Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?"],
+    )
+
+
+class Kaynak(BaseModel):
+    dokuman_kodu: str
+    dokuman_basligi: str
+    sayfa: int
+    bolum: str | None
+
+
+class AracCagrisiOzeti(BaseModel):
+    ad: str
+    argumanlar: dict | str
+    hata: str | None = None
+
+
+class Kullanim(BaseModel):
+    model: str
+    adim_sayisi: int
+    girdi_token: int
+    cikti_token: int
+    maliyet_usd: float | None = Field(
+        description="Ücretli katman liste fiyatıyla; bilinmiyorsa boş"
+    )
+    sure_ms: int
+
+
+class SohbetCevabi(BaseModel):
+    cevap: str
+    kaynaklar: list[Kaynak] = Field(description="Agent'ın okuduğu kılavuz sayfaları")
+    arac_cagrilari: list[AracCagrisiOzeti]
+    kullanim: Kullanim
+
+
+class KullanimOzeti(BaseModel):
+    istek_sayisi: int
+    hatali_istek: int
+    toplam_girdi_token: int
+    toplam_cikti_token: int
+    toplam_maliyet_usd: float | None
+    ortalama_sure_ms: int | None
+    p95_sure_ms: int | None
+
+
 class Saglik(BaseModel):
     veritabani: bool

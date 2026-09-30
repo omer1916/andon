@@ -1,0 +1,158 @@
+"""Agent döngüsü: LLM araç çağırdıkça çalıştır, sonucu geri ver, son cevabı döndür."""
+
+import json
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+
+import psycopg
+from psycopg.types.json import Jsonb
+
+from app.db import TZ
+from app.llm import LLM, maliyet_hesapla
+from app.tools import AracBaglami, arac_calistir, arac_semalari
+
+MAKS_ADIM = 6  # LLM çağrısı sayısı; araç döngüsü sonsuza gitmesin
+
+GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+SISTEM_ISTEMI = """\
+Sen Andon'sun: bir fabrikada bakım ekibine ve operatörlere yardım eden asistan.
+Fabrikada Pres 1-3, Kaynak 1-2, Montaj 1 ve Boya 1 hatları var.
+
+Şu an: {simdi}. "Geçen ay", "bu hafta", "dün" gibi ifadeleri bu tarihe göre somut bir tarih
+aralığına çevir. Örneğin geçen ay, bir önceki takvim ayının ilk ve son günüdür.
+
+Kurallar:
+- Arıza sayısı, stok gibi bilgileri yalnızca araçlardan al; asla tahmin etme.
+- Bakım, arıza giderme ve kalite bilgisini yalnızca dokuman_ara sonuçlarına dayandır.
+  Kullandığın her bilginin kaynağını doküman kodu ve sayfayla göster, örneğin (PRES-BK-01, s. 4).
+- Araçlarda cevap bulamazsan bilmediğini açıkça söyle.
+- bakim_talebi_olustur aracını yalnızca kullanıcı açıkça bakım talebi açılmasını isterse çağır.
+- Bir araç hata döndürürse mesajı oku; düzeltebiliyorsan argümanı düzeltip tekrar dene.
+- Cevabı Türkçe, kısa ve maddeler hâlinde ver.
+"""
+
+
+@dataclass
+class SohbetSonucu:
+    cevap: str
+    kaynaklar: list[dict]
+    arac_cagrilari: list[dict]
+    adim_sayisi: int
+    girdi_token: int = 0
+    cikti_token: int = 0
+    sure_ms: int = 0
+    maliyet_usd: float | None = None
+    model: str = ""
+    hata: str | None = None
+    mesajlar: list[dict] = field(default_factory=list, repr=False)
+
+
+class SohbetHatasi(Exception):
+    """Döngü yarıda kaldı (LLM kotası, ağ hatası...). O ana kadarki token ve araç çağrıları
+    `sonuc` içinde; kayda geçirilebilsin diye taşınır. Asıl hata `__cause__`'dadır."""
+
+    def __init__(self, sonuc: "SohbetSonucu"):
+        super().__init__(sonuc.hata)
+        self.sonuc = sonuc
+
+
+def sistem_istemi(simdi: datetime) -> str:
+    return SISTEM_ISTEMI.format(simdi=f"{simdi:%Y-%m-%d %H:%M}, {GUNLER[simdi.weekday()]}")
+
+
+def sohbet(soru: str, llm: LLM, baglam: AracBaglami, simdi: datetime | None = None) -> SohbetSonucu:
+    """Soruyu cevaplar. Döngü bir hatayla yarıda kalırsa SohbetHatasi fırlatır."""
+    baslangic = time.perf_counter()
+    mesajlar: list[dict] = [
+        {"role": "system", "content": sistem_istemi(simdi or datetime.now(TZ))},
+        {"role": "user", "content": soru},
+    ]
+    sonuc = SohbetSonucu(
+        cevap="", kaynaklar=baglam.kaynaklar, arac_cagrilari=[], adim_sayisi=0, model=llm.model
+    )
+    try:
+        _dongu(llm, baglam, mesajlar, sonuc)
+    except Exception as hata:
+        sonuc.hata = f"{type(hata).__name__}: {hata}"
+        raise SohbetHatasi(sonuc) from hata
+    finally:
+        sonuc.sure_ms = round((time.perf_counter() - baslangic) * 1000)
+        sonuc.maliyet_usd = maliyet_hesapla(
+            llm.saglayici, llm.model, sonuc.girdi_token, sonuc.cikti_token
+        )
+        sonuc.mesajlar = mesajlar
+    return sonuc
+
+
+def _dongu(llm: LLM, baglam: AracBaglami, mesajlar: list[dict], sonuc: SohbetSonucu) -> None:
+    araclar = arac_semalari()
+    for _ in range(MAKS_ADIM):
+        yanit = llm.tamamla(mesajlar, araclar)
+        sonuc.adim_sayisi += 1
+        sonuc.girdi_token += yanit.girdi_token
+        sonuc.cikti_token += yanit.cikti_token
+        mesajlar.append(yanit.mesaj)
+
+        if not yanit.arac_cagrilari:
+            sonuc.cevap = yanit.metin or ""
+            break
+
+        for cagri in yanit.arac_cagrilari:
+            cikti = arac_calistir(cagri.ad, cagri.argumanlar_json, baglam)
+            sonuc.arac_cagrilari.append(
+                {
+                    "ad": cagri.ad,
+                    "argumanlar": _json_coz(cagri.argumanlar_json),
+                    "hata": cikti.get("hata"),
+                }
+            )
+            mesajlar.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": cagri.id,
+                    "name": cagri.ad,
+                    "content": json.dumps(cikti, ensure_ascii=False, default=str),
+                }
+            )
+    else:
+        sonuc.hata = f"{MAKS_ADIM} adımda son cevaba ulaşılamadı"
+        sonuc.cevap = "Bu soruyu cevaplayamadım; lütfen soruyu daraltıp tekrar deneyin."
+
+
+def _json_coz(metin: str) -> object:
+    try:
+        return json.loads(metin or "{}")
+    except json.JSONDecodeError:
+        return metin
+
+
+def kaydet(
+    conn: psycopg.Connection, soru: str, kullanici: str, saglayici: str, sonuc: SohbetSonucu
+) -> int:
+    """İsteği llm_istekleri tablosuna yazar; kaydın id'sini döner."""
+    satir = conn.execute(
+        """
+        INSERT INTO llm_istekleri (kullanici, saglayici, model, soru, cevap, arac_cagrilari,
+                                   adim_sayisi, girdi_token, cikti_token, maliyet_usd,
+                                   sure_ms, hata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        [
+            kullanici,
+            saglayici,
+            sonuc.model,
+            soru,
+            sonuc.cevap or None,
+            Jsonb(sonuc.arac_cagrilari),
+            sonuc.adim_sayisi,
+            sonuc.girdi_token,
+            sonuc.cikti_token,
+            sonuc.maliyet_usd,
+            sonuc.sure_ms,
+            sonuc.hata,
+        ],
+    ).fetchone()
+    return satir[0]

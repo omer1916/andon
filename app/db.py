@@ -1,12 +1,11 @@
 """Veritabanı bağlantısı."""
 
-import os
 from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg_pool import ConnectionPool
 
-VARSAYILAN_URL = "postgresql://andon:andon@localhost:5432/andon"
+from app.ayarlar import ayarlar
 
 # Fabrikanın saat dilimi: "geçen ay", "bugün" gibi sınırlar buna göre hesaplanır.
 TZ = ZoneInfo("Europe/Istanbul")
@@ -17,7 +16,7 @@ BAGLANTI_ZAMAN_ASIMI = 5
 
 
 def veritabani_url() -> str:
-    return os.environ.get("DATABASE_URL", VARSAYILAN_URL)
+    return ayarlar().database_url
 
 
 def baglan() -> psycopg.Connection:
@@ -25,10 +24,15 @@ def baglan() -> psycopg.Connection:
 
 
 def havuz_olustur() -> ConnectionPool:
-    """API için bağlantı havuzu. Veritabanı yoksa istek 5 saniye bekleyip hata verir."""
+    """API için bağlantı havuzu. Veritabanı yoksa istek 5 saniye bekleyip hata verir.
+
+    Bağlantılar autocommit modunda: her sorgu kendi transaction'ında çalışır. Agent bir
+    isteği cevaplarken LLM'i saniyelerce bekler; bu sırada açık bir transaction tutulmaz ve
+    agent'ın açtığı bakım talebi, istek sonradan hata verse bile kaydedilmiş olur.
+    """
     return ConnectionPool(
         veritabani_url(),
-        kwargs={"connect_timeout": BAGLANTI_ZAMAN_ASIMI},
+        kwargs={"connect_timeout": BAGLANTI_ZAMAN_ASIMI, "autocommit": True},
         min_size=1,
         max_size=10,
         timeout=5,

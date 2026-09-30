@@ -1,6 +1,7 @@
 """Veritabanı sorguları. API uç noktaları ve agent araçları bu fonksiyonları kullanır.
 
-Kullanıcıdan gelen her değer parametre olarak geçer, SQL metnine hiçbir zaman eklenmez.
+Kullanıcıdan (ya da LLM'den) gelen her değer parametre olarak geçer, SQL metnine hiçbir zaman
+eklenmez.
 """
 
 from datetime import date, datetime, time, timedelta
@@ -38,20 +39,13 @@ def hat_adini_bul(conn: psycopg.Connection, ad: str) -> str | None:
     return satir[0] if satir else None
 
 
-def arizalari_getir(
-    conn: psycopg.Connection,
-    *,
-    hat: str | None = None,
-    baslangic: date | None = None,
-    bitis: date | None = None,
-    ariza_tipi: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> tuple[int, list[dict]]:
-    """Filtreye uyan arızaların toplam sayısını ve istenen sayfasını döner (yeniden eskiye).
+def _ariza_kaynagi(
+    hat: str | None, baslangic: date | None, bitis: date | None, ariza_tipi: str | None
+) -> tuple[sql.Composed, dict]:
+    """Arıza sorgularının ortak FROM/WHERE kısmı ve parametreleri.
 
     `baslangic` ve `bitis` gün olarak verilir ve ikisi de dahildir; arızanın başladığı
-    ana göre filtrelenir.
+    ana göre, Türkiye saatiyle filtrelenir.
     """
     kosullar = []
     parametreler: dict = {}
@@ -77,7 +71,21 @@ def arizalari_getir(
         WHERE {}
         """
     ).format(where)
+    return kaynak, parametreler
 
+
+def arizalari_getir(
+    conn: psycopg.Connection,
+    *,
+    hat: str | None = None,
+    baslangic: date | None = None,
+    bitis: date | None = None,
+    ariza_tipi: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[int, list[dict]]:
+    """Filtreye uyan arızaların toplam sayısını ve istenen sayfasını döner (yeniden eskiye)."""
+    kaynak, parametreler = _ariza_kaynagi(hat, baslangic, bitis, ariza_tipi)
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sql.SQL("SELECT count(*) AS toplam ") + kaynak, parametreler)
         toplam = cur.fetchone()["toplam"]
@@ -103,3 +111,103 @@ def arizalari_getir(
             {**parametreler, "limit": limit, "offset": offset},
         )
         return toplam, cur.fetchall()
+
+
+def ariza_ozeti(
+    conn: psycopg.Connection,
+    *,
+    hat: str | None = None,
+    baslangic: date | None = None,
+    bitis: date | None = None,
+    ariza_tipi: str | None = None,
+) -> dict:
+    """Filtreye uyan arızaların sayısı, tiplere ve makinelere göre dağılımı."""
+    kaynak, parametreler = _ariza_kaynagi(hat, baslangic, bitis, ariza_tipi)
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL("SELECT a.ariza_tipi, count(*) ")
+            + kaynak
+            + sql.SQL("GROUP BY a.ariza_tipi ORDER BY count(*) DESC, a.ariza_tipi"),
+            parametreler,
+        )
+        tiplere_gore = dict(cur.fetchall())
+        cur.execute(
+            sql.SQL("SELECT m.kod, count(*) ")
+            + kaynak
+            + sql.SQL("GROUP BY m.kod ORDER BY count(*) DESC, m.kod"),
+            parametreler,
+        )
+        makinelere_gore = dict(cur.fetchall())
+    return {
+        "toplam": sum(tiplere_gore.values()),
+        "tiplere_gore": tiplere_gore,
+        "makinelere_gore": makinelere_gore,
+    }
+
+
+def stok_getir(
+    conn: psycopg.Connection, *, parca_kodu: str | None = None, sadece_kritik: bool = False
+) -> list[dict]:
+    """Yedek parça stoku. `sadece_kritik`: yalnızca minimum seviyenin altındakiler."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT parca_kodu, ad, kategori, miktar, min_miktar, birim, konum,
+                   miktar < min_miktar AS kritik
+            FROM stok
+            WHERE (%(kod)s::text IS NULL OR parca_kodu = upper(%(kod)s::text))
+              AND (NOT %(kritik)s OR miktar < min_miktar)
+            ORDER BY parca_kodu
+            """,
+            {"kod": parca_kodu.strip() if parca_kodu else None, "kritik": sadece_kritik},
+        )
+        return cur.fetchall()
+
+
+def makine_bul(conn: psycopg.Connection, kod: str) -> dict | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.kod, m.ad, h.ad AS hat
+            FROM makineler m JOIN hatlar h ON h.id = m.hat_id
+            WHERE m.kod = upper(%s)
+            """,
+            [kod.strip()],
+        )
+        return cur.fetchone()
+
+
+def makine_kodlari(conn: psycopg.Connection) -> list[str]:
+    return [satir[0] for satir in conn.execute("SELECT kod FROM makineler ORDER BY kod")]
+
+
+def llm_kullanim_ozeti(conn: psycopg.Connection) -> dict:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT count(*)                                  AS istek_sayisi,
+                   count(*) FILTER (WHERE hata IS NOT NULL)  AS hatali_istek,
+                   coalesce(sum(girdi_token), 0)             AS toplam_girdi_token,
+                   coalesce(sum(cikti_token), 0)             AS toplam_cikti_token,
+                   sum(maliyet_usd)::float                   AS toplam_maliyet_usd,
+                   round(avg(sure_ms))::int                  AS ortalama_sure_ms,
+                   round(percentile_cont(0.95) WITHIN GROUP (ORDER BY sure_ms))::int
+                                                             AS p95_sure_ms
+            FROM llm_istekleri
+            """
+        )
+        return cur.fetchone()
+
+
+def bakim_talebi_ekle(
+    conn: psycopg.Connection, *, makine_id: int, aciklama: str, oncelik: str, olusturan: str
+) -> int:
+    satir = conn.execute(
+        """
+        INSERT INTO bakim_talepleri (makine_id, aciklama, oncelik, olusturan)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id
+        """,
+        [makine_id, aciklama, oncelik, olusturan],
+    ).fetchone()
+    return satir[0]
