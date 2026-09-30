@@ -42,3 +42,32 @@ pytest
 ```
 
 Her iş kendi branch'inde yapılır ve `main`'e pull request ile birleşir.
+
+## Veritabanı
+
+PostgreSQL 17 ve pgvector Docker içinde çalışır. Ayarları değiştirmek istersen
+`.env.example` dosyasını `.env` adıyla kopyala.
+
+```bash
+docker compose up -d                              # veritabanını başlat (localhost:5432)
+python scripts/seed.py                            # tabloları kur, 6 aylık sahte veri üret
+docker compose exec db psql -U andon -d andon     # SQL konsolu
+```
+
+`seed.py` her çalıştığında tabloları silip yeniden kurar. Aynı veriyi tekrar üretmek için
+bitiş anını sabitle: `python scripts/seed.py --son "2026-09-30 12:00"`.
+
+| Tablo | İçerik |
+|---|---|
+| `hatlar` | Üretim hatları: Pres 1-3, Kaynak 1-2, Montaj 1, Boya 1 |
+| `makineler` | Hatlardaki makineler (örn. `P3-HP`: Pres 3 hidrolik presi) |
+| `ariza_kayitlari` | Makine arızaları: başlangıç/bitiş, tip, önem, hattı durdurup durdurmadığı |
+| `stok` | Yedek parça stoku ve minimum seviyeleri |
+| `is_emirleri` | Arıza müdahaleleri ve periyodik bakımlar, kullanılan parça |
+| `bakim_talepleri` | Operatörlerin açtığı bakım talepleri; agent da buraya yazacak |
+
+Şema [`sql/schema.sql`](sql/schema.sql) dosyasında. Arıza, iş emri ve bakım talebi
+kayıtları hatta değil makineye bağlıdır; hatta `makineler.hat_id` üzerinden ulaşılır.
+Böylece bir kaydın makinesi ile hattı birbiriyle çelişemez.
+
+Elle yazılmış örnek sorgular: [`sql/sorular.sql`](sql/sorular.sql).

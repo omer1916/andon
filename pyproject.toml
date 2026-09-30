@@ -9,10 +9,14 @@ description = "Fabrika verisi ve bakım kılavuzları üzerinde çalışan yapay
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "tzdata",  # Windows'ta zoneinfo saat dilimi verisini bu paketten okur
+]
 
 [project.optional-dependencies]
 dev = [
+    "faker>=30",
     "pytest>=8",
     "ruff>=0.6",
 ]
@@ -30,3 +34,4 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # testler scripts/ altındaki modülleri de import edebilsin
