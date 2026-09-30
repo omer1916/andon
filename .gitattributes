@@ -1,0 +1,7 @@
+# Depoda tüm metin dosyaları LF satır sonuyla tutulsun.
+# Windows'ta yazılan script'ler Docker (Linux) içinde bozulmasın.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.gif binary
