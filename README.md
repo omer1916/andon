@@ -313,7 +313,10 @@ tests/           1573 test
   hibrit arama.
 - **Ölçümler iyimser.** Kılavuzları ve soruları aynı kişi yazdı, koleksiyon küçük (67 parça).
 - **Sohbet geçmişi yok.** Her soru bağımsız; "peki geçen hafta?" gibi bir devam sorusu anlaşılmaz.
-- **Cevap akışı (streaming) yok.** Cevap tamamlanınca bir seferde gelir.
+- **Cevap akışı (streaming) yok ve LLM gecikmesi dalgalı.** Cevap tamamlanınca bir seferde
+  gelir. Ücretsiz katmanda aynı Gemini çağrısı art arda denemelerde 0,8 sn ile 24 sn arasında
+  sürdü (DNS ve ağ tarafı ölçülüp elendi); böyle anlarda bir soru 30 saniyeyi bulabiliyor.
+  Streaming ve daha kısa zaman aşımıyla yeniden deneme bunu yumuşatır.
 - **Giriş denemelerine sınır yok.** Hesap kilitleme, istek sınırı ve yenileme token'ı üretim
   öncesi eklenmeli; kullanıcı yönetimi yok, demo kullanıcılar seed ile gelir.
 - **Ollama yolu denenmedi.** Kod aynı, ama bu makinede Ollama kurulu değildi.
