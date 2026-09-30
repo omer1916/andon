@@ -17,7 +17,7 @@ Geliştirme aşamasında. Haftalık plan:
 
 - [x] Hafta 0: Kurulum
 - [x] Hafta 1: Veritabanı ve sahte veri
-- [ ] Hafta 2: API
+- [x] Hafta 2: API
 - [ ] Hafta 3: RAG
 - [ ] Hafta 4: LLM ve agent
 - [ ] Hafta 5: Güvenlik ve kalite
@@ -71,3 +71,32 @@ kayıtları hatta değil makineye bağlıdır; hatta `makineler.hat_id` üzerind
 Böylece bir kaydın makinesi ile hattı birbiriyle çelişemez.
 
 Elle yazılmış örnek sorgular: [`sql/sorular.sql`](sql/sorular.sql).
+
+## API
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Uç noktalar http://localhost:8000/docs adresinden denenebilir.
+
+| Uç nokta | Ne döner |
+|---|---|
+| `GET /saglik` | Servis ve veritabanı durumu; veritabanına ulaşılamıyorsa 503 |
+| `GET /hatlar` | Üretim hatları ve her hattaki makine sayısı |
+| `GET /arizalar` | Arızalar, yeniden eskiye; `hat`, `baslangic`, `bitis`, `ariza_tipi`, `limit`, `offset` ile filtrelenir |
+
+Demo sorusunun ilk yarısı ("Pres 3 hattında geçen ay kaç arıza oldu?"):
+
+```
+GET /arizalar?hat=Pres 3&baslangic=2026-08-01&bitis=2026-08-31
+```
+
+- Tarihler gün olarak verilir, iki uç da dahildir ve Türkiye saatine göre hesaplanır.
+- Hat adında büyük/küçük harf fark etmez. Olmayan bir hat 404 döner ve cevapta geçerli
+  hatlar listelenir; ileride LLM yanlış hat adı verirse bu mesajdan düzeltebilecek.
+- Tanımsız parametre, geçersiz tarih ya da ters aralık 422 döner.
+
+API testleri `andon_test` adında ayrı bir veritabanı kurup sabit bir tarihle üretilen veriyle
+doldurur. Beklenen sonuçlar aynı veriden Python'da hesaplanıp API'nin cevabıyla
+karşılaştırılır. Veritabanı kapalıysa bu testler atlanır.

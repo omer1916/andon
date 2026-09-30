@@ -20,15 +20,13 @@ import random
 import sys
 from datetime import datetime, time, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import psycopg
 from faker import Faker
 from psycopg import sql
 
-from app.db import baglan
+from app.db import TZ, baglan
 
-TZ = ZoneInfo("Europe/Istanbul")
 SEMA_DOSYASI = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
 GUN_SAYISI = 183  # yaklaşık 6 ay
 
