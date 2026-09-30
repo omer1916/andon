@@ -181,6 +181,16 @@ def makine_kodlari(conn: psycopg.Connection) -> list[str]:
     return [satir[0] for satir in conn.execute("SELECT kod FROM makineler ORDER BY kod")]
 
 
+def kullanici_getir(conn: psycopg.Connection, kullanici_adi: str) -> dict | None:
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT kullanici_adi, ad_soyad, rol, parola_hash FROM kullanicilar "
+            "WHERE kullanici_adi = %s",
+            [kullanici_adi.strip().lower()],
+        )
+        return cur.fetchone()
+
+
 def llm_kullanim_ozeti(conn: psycopg.Connection) -> dict:
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(

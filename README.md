@@ -20,7 +20,7 @@ Geliştirme aşamasında. Haftalık plan:
 - [x] Hafta 2: API
 - [x] Hafta 3: RAG
 - [x] Hafta 4: LLM ve agent (gerçek Gemini ile demo doğrulaması API anahtarı bekliyor)
-- [ ] Hafta 5: Güvenlik ve kalite
+- [x] Hafta 5: Güvenlik ve kalite (değerlendirme sonuçları API anahtarı bekliyor)
 - [ ] Hafta 6: Arayüz ve sunum
 
 ## Geliştirme ortamı
@@ -212,3 +212,63 @@ maliyet 0'dır.
 Testler gerçek LLM yerine senaryolu sahte bir LLM kullanır ("önce şu araçları çağır, sonra şu
 cevabı ver"). Döngü, araç doğrulaması, hata mesajları, token toplamı ve kayıt böylece API
 anahtarı olmadan test edilir.
+
+## Giriş ve yetki
+
+`POST /giris` kullanıcı adı ve parolayla 8 saat (bir vardiya) geçerli bir JWT döner. `/saglik`
+dışındaki bütün uç noktalar token ister. `/docs` sayfasında sağ üstteki **Authorize** ile giriş
+yapılabilir. Seed iki demo kullanıcı oluşturur: `operator` ve `bakim` (parola `.env`'deki
+`DEMO_PAROLA`).
+
+| Rol | Görebildiği dokümanlar | Ek yetki |
+|---|---|---|
+| `operator` | Operatör talimatı, kalite prosedürü | - |
+| `bakim` | Hepsi (bakım kılavuzları dahil) | `GET /kullanim` |
+
+**Yetki aramanın içinde uygulanır.** `dokuman_ara` SQL'i `WHERE d.erisim = ANY(...)` ile
+çalışır; operatörün göremeyeceği bir parça veritabanından hiç gelmez, LLM'e de ulaşmaz. Erişim
+listesi token'daki rolden gelir, LLM'in araç argümanlarıyla değiştirilemez. Filtre
+sıralamadan önce uygulandığı için operatör yine k sonuç alır (yalnızca kendi dokümanlarından).
+Fonksiyonun `erisim` parametresi bilerek zorunludur: yetkiyi unutan bir çağrı her şeyi
+döndürmek yerine hata verir.
+
+Diğer kararlar:
+
+- Parolalar argon2 ile saklanır. Bilinmeyen kullanıcı adında da parola doğrulaması yapılır;
+  yanıt süresinden ya da mesajdan kullanıcı adının var olup olmadığı anlaşılmaz.
+- `/chat`'te kimlik, LLM ayarından önce doğrulanır. Aksi hâlde giriş yapmamış biri "LLM ayarlı
+  değil" hatasından sunucunun durumunu öğrenebilirdi (bir test bunu yakaladı).
+- Testler süresi dolmuş, yanlış anahtarla imzalanmış, imzasız (`alg: none`) ve rolü
+  değiştirilmiş token'ların reddedildiğini doğrular.
+
+## Değerlendirme
+
+[`eval/sorular.jsonl`](eval/sorular.jsonl): agent'ı uçtan uca ölçen 30 soru.
+
+| Kategori | Soru | Ne ölçülüyor |
+|---|---|---|
+| Sayısal | 10 | Doğru aracı çağırıp doğru sayıyı veriyor mu |
+| Doküman | 10 | Doğru sayfayı bulup kaynak gösteriyor mu |
+| Birleşik | 4 | Veritabanı + kılavuz aynı cevapta (demo sorusu dahil) |
+| Yetki | 3 | Operatöre bakım kılavuzundan bilgi sızıyor mu |
+| Bilinmeyen | 2 | Kılavuzda olmayan bilgi, olmayan hat: uydurmadan "bilmiyorum" diyor mu |
+| Yazma | 1 | İstenince doğru talebi açıyor mu |
+
+Sayısal soruların beklenen cevabı sabit bir sayı değil, SQL'dir; her çalıştırmada
+veritabanından hesaplanır. Talep beklenmeyen 29 soruda ayrıca istenmeden bakım talebi açılıp
+açılmadığı kontrol edilir.
+
+```bash
+python scripts/degerlendir.py      # rapor: eval/sonuclar.md
+pytest -m eval                     # aynı set, her soru bir test
+```
+
+Normal `pytest` çalıştırması değerlendirmeyi atlar (LLM kotası harcamasın). Setin tutarlılığı
+ve değerlendiricinin kendisi (doğru cevabı geçirip yanlış sayıyı, kaynaksız cevabı ve
+istenmeyen talebi yakalaması) her testte sahte LLM ile doğrulanır.
+
+## CI
+
+Her pull request'te GitHub Actions ruff ve testleri çalıştırır. Testler pgvector'lü gerçek
+bir PostgreSQL servis konteynerine karşı koşar; veritabanına ulaşılamazsa atlanmaz, başarısız
+olur (`ANDON_DB_ZORUNLU=1`).

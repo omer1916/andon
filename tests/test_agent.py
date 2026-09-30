@@ -8,6 +8,7 @@ import psycopg
 import pytest
 
 from app.agent import MAKS_ADIM, SohbetHatasi, kaydet, sohbet
+from app.auth import Kullanici
 from app.db import TZ
 from app.llm import AracCagrisi, LLMYaniti, maliyet_hesapla
 from app.main import llm_getir
@@ -67,7 +68,9 @@ def arac_sonuclari(llm: SenaryoluLLM) -> list[dict]:
 @pytest.fixture
 def baglam(test_veritabani):
     with psycopg.connect(test_veritabani, autocommit=True) as conn:
-        yield AracBaglami(conn=conn, embedder=SahteEmbedder(), kullanici="test")
+        yield AracBaglami(
+            conn=conn, embedder=SahteEmbedder(), kullanici=Kullanici("test", "Test", "bakim")
+        )
 
 
 def test_arac_semalari_llm_icin_sade():

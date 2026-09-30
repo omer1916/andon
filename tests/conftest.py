@@ -20,16 +20,25 @@ from fastapi.testclient import TestClient
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from app.auth import Kullanici, token_uret
 from app.db import BAGLANTI_ZAMAN_ASIMI, TZ
 from app.embedding import BOYUT
 from app.main import embedder_getir, uygulama_olustur
 from scripts.ingest import dokumanlari_yaz, kilavuzlari_oku
-from scripts.seed import veri_uret, veritabanina_yaz
+from scripts.seed import demo_kullanicilari_yaz, veri_uret, veritabanina_yaz
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql://andon:andon@localhost:5432/andon_test"
 )
 SABIT_AN = datetime(2026, 9, 30, 12, 0, tzinfo=TZ)
+TEST_PAROLA = "test-parolasi"
+BAKIM = Kullanici("bakim", "Demo Bakım Mühendisi", "bakim")
+OPERATOR = Kullanici("operator", "Demo Operatör", "operator")
+
+
+def yetki(kullanici: Kullanici) -> dict[str, str]:
+    """İsteğe eklenecek Authorization başlığı."""
+    return {"Authorization": f"Bearer {token_uret(kullanici)}"}
 
 
 class SahteEmbedder:
@@ -73,6 +82,7 @@ def test_veritabani(test_verisi):
         _veritabanini_olustur(TEST_DB_URL)
         with psycopg.connect(TEST_DB_URL) as conn:
             veritabanina_yaz(conn, test_verisi)
+            demo_kullanicilari_yaz(conn, TEST_PAROLA)
             dokumanlari_yaz(conn, kilavuzlari_oku(), SahteEmbedder())
     except psycopg.OperationalError as hata:
         if os.environ.get("ANDON_DB_ZORUNLU") == "1":
@@ -87,5 +97,6 @@ def istemci(test_veritabani):
         mp.setenv("DATABASE_URL", test_veritabani)
         uygulama = uygulama_olustur(model_on_yukle=False)
         uygulama.dependency_overrides[embedder_getir] = SahteEmbedder
-        with TestClient(uygulama) as istemci:
+        # Varsayılan olarak bakım mühendisi girişi; rol testleri başlığı istek bazında değiştirir.
+        with TestClient(uygulama, headers=yetki(BAKIM)) as istemci:
             yield istemci

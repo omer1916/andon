@@ -14,8 +14,11 @@ dependencies = [
     "openai>=1.60",  # Gemini ve Ollama'nın OpenAI uyumlu API'si için
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",
+    "pwdlib[argon2]>=0.2",
     "pydantic-settings>=2",
+    "pyjwt>=2.8",
     "pypdf>=5",
+    "python-multipart",  # /giris formu (OAuth2 parola akışı) için
     "sentence-transformers>=3",
     "tzdata",  # Windows'ta zoneinfo saat dilimi verisini bu paketten okur
     "uvicorn>=0.30",
@@ -44,3 +47,7 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]  # testler scripts/ altındaki modülleri de import edebilsin
+# Değerlendirme seti gerçek LLM'e istek atar (süre ve kota harcar); yalnızca `pytest -m eval`
+# ile açıkça istendiğinde çalışır.
+addopts = "-m 'not eval'"
+markers = ["eval: gerçek LLM ile uçtan uca değerlendirme (GEMINI_API_KEY gerekir)"]

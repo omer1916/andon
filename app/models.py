@@ -130,5 +130,13 @@ class KullanimOzeti(BaseModel):
     p95_sure_ms: int | None
 
 
+class Token(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"]
+    kullanici_adi: str
+    ad_soyad: str
+    rol: Literal["operator", "bakim"]
+
+
 class Saglik(BaseModel):
     veritabani: bool

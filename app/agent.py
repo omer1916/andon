@@ -8,6 +8,7 @@ from datetime import datetime
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.auth import ROL_ADLARI, Kullanici
 from app.db import TZ
 from app.llm import LLM, maliyet_hesapla
 from app.tools import AracBaglami, arac_calistir, arac_semalari
@@ -22,6 +23,8 @@ Fabrikada Pres 1-3, Kaynak 1-2, Montaj 1 ve Boya 1 hatları var.
 
 Şu an: {simdi}. "Geçen ay", "bu hafta", "dün" gibi ifadeleri bu tarihe göre somut bir tarih
 aralığına çevir. Örneğin geçen ay, bir önceki takvim ayının ilk ve son günüdür.
+
+Konuştuğun kişi: {ad_soyad} ({rol_adi}).{rol_notu}
 
 Kurallar:
 - Arıza sayısı, stok gibi bilgileri yalnızca araçlardan al; asla tahmin etme.
@@ -58,15 +61,27 @@ class SohbetHatasi(Exception):
         self.sonuc = sonuc
 
 
-def sistem_istemi(simdi: datetime) -> str:
-    return SISTEM_ISTEMI.format(simdi=f"{simdi:%Y-%m-%d %H:%M}, {GUNLER[simdi.weekday()]}")
+OPERATOR_NOTU = (
+    " Operatörler bakım kılavuzlarını göremez; dokuman_ara yalnızca operatör talimatlarında ve"
+    " kalite prosedüründe arar. Bakım müdahalesi gereken durumlarda bakım ekibini çağırmasını ya"
+    " da bakım talebi açmasını öner; bakım adımlarını kendin tarif etme."
+)
+
+
+def sistem_istemi(simdi: datetime, kullanici: Kullanici) -> str:
+    return SISTEM_ISTEMI.format(
+        simdi=f"{simdi:%Y-%m-%d %H:%M}, {GUNLER[simdi.weekday()]}",
+        ad_soyad=kullanici.ad_soyad,
+        rol_adi=ROL_ADLARI[kullanici.rol],
+        rol_notu=OPERATOR_NOTU if kullanici.rol == "operator" else "",
+    )
 
 
 def sohbet(soru: str, llm: LLM, baglam: AracBaglami, simdi: datetime | None = None) -> SohbetSonucu:
     """Soruyu cevaplar. Döngü bir hatayla yarıda kalırsa SohbetHatasi fırlatır."""
     baslangic = time.perf_counter()
     mesajlar: list[dict] = [
-        {"role": "system", "content": sistem_istemi(simdi or datetime.now(TZ))},
+        {"role": "system", "content": sistem_istemi(simdi or datetime.now(TZ), baglam.kullanici)},
         {"role": "user", "content": soru},
     ]
     sonuc = SohbetSonucu(
