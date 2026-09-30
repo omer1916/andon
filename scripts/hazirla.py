@@ -1,0 +1,69 @@
+"""Docker açılışında veritabanını hazırlar.
+
+Kullanım (Dockerfile'daki başlangıç komutu):
+    python -m scripts.hazirla
+
+- Operasyon tabloları yoksa ya da boşsa seed çalıştırır (6 aylık sahte veri + demo kullanıcılar).
+- Kılavuzlar yüklenmemişse ingest çalıştırır (ilk seferde embedding modeli indirilir).
+- Veri zaten varsa dokunmaz: konteyner yeniden başladığında agent'ın açtığı talepler ve LLM
+  kayıtları silinmez.
+"""
+
+import sys
+import time
+from datetime import datetime
+
+import psycopg
+from psycopg import sql
+
+from app.ayarlar import ayarlar
+from app.db import TZ, baglan
+from app.embedding import varsayilan_embedder
+from scripts import ingest, seed
+
+
+def veritabanini_bekle(en_fazla_sn: int = 60) -> None:
+    son = time.monotonic() + en_fazla_sn
+    while True:
+        try:
+            with baglan():
+                return
+        except psycopg.OperationalError:
+            if time.monotonic() > son:
+                raise
+            time.sleep(2)
+
+
+def _dolu_mu(conn: psycopg.Connection, tablo: str) -> bool:
+    if conn.execute("SELECT to_regclass(%s)", [tablo]).fetchone()[0] is None:
+        return False
+    sorgu = sql.SQL("SELECT EXISTS (SELECT 1 FROM {})").format(sql.Identifier(tablo))
+    return conn.execute(sorgu).fetchone()[0]
+
+
+def main() -> None:
+    veritabanini_bekle()
+    with baglan() as conn:
+        seed_gerekli = not _dolu_mu(conn, "hatlar")
+        ingest_gerekli = not _dolu_mu(conn, "dokuman_parcalari")
+
+    if seed_gerekli:
+        print("Operasyon verisi yok; sahte veri üretiliyor...", flush=True)
+        veri = seed.veri_uret(datetime.now(TZ).replace(second=0, microsecond=0))
+        with baglan() as conn:
+            seed.veritabanina_yaz(conn, veri)
+            seed.demo_kullanicilari_yaz(conn, ayarlar().demo_parola)
+    if ingest_gerekli:
+        print(
+            "Kılavuzlar yüklenmemiş; PDF'ler işleniyor (ilk seferde model indirilir)...", flush=True
+        )
+        with baglan() as conn:
+            ingest.dokumanlari_yaz(conn, ingest.kilavuzlari_oku(), varsayilan_embedder())
+    print("Veritabanı hazır.", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except psycopg.OperationalError as hata:
+        sys.exit(f"Veritabanına bağlanılamadı: {hata}")

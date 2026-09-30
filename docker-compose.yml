@@ -17,5 +17,23 @@ services:
       timeout: 3s
       retries: 10
 
+  # Uygulama: ilk açılışta veritabanını doldurur (seed + ingest), sonra API'yi ve arayüzü sunar.
+  # Yalnızca veritabanı gerekiyorsa (yerel geliştirme): docker compose up -d db
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - model-onbellegi:/model-onbellegi
+
 volumes:
   pgdata:
+  model-onbellegi:

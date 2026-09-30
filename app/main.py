@@ -7,13 +7,15 @@ Belgeler: http://localhost:8000/docs  (sağ üstteki "Authorize" ile giriş yap�
 import threading
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 import openai
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__, agent, rag, sorgular
 from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
@@ -33,7 +35,10 @@ from app.models import (
     SohbetIstegi,
     Token,
 )
+from app.rag import KILAVUZ_KLASORU
 from app.tools import AracBaglami
+
+STATIK_KLASOR = Path(__file__).resolve().parent / "static"
 
 router = APIRouter()
 
@@ -201,6 +206,30 @@ def chat(
 
 
 @router.get(
+    "/dokumanlar/{kod}/pdf",
+    response_class=FileResponse,
+    responses={404: {"description": "Doküman yok ya da rolün görmeye yetkili değil"}},
+    summary="Kılavuzun PDF'i; arayüzdeki kaynak bağlantıları bununla açılır",
+)
+def dokuman_pdf(kod: str, conn: Baglanti, kullanici: AktifKullanici):
+    dokuman = sorgular.dokuman_getir(conn, kod)
+    # Yetkisiz rol için de 404: dokümanın var olduğu bile anlaşılmasın.
+    if dokuman is None or dokuman["erisim"] not in kullanici.erisim:
+        raise HTTPException(404, "Doküman bulunamadı.")
+    return FileResponse(
+        KILAVUZ_KLASORU / dokuman["dosya"],
+        media_type="application/pdf",
+        content_disposition_type="inline",
+        filename=dokuman["dosya"],
+    )
+
+
+@router.get("/", include_in_schema=False)
+def arayuz():
+    return FileResponse(STATIK_KLASOR / "index.html")
+
+
+@router.get(
     "/kullanim",
     response_model=KullanimOzeti,
     responses={403: {"description": "Yalnızca bakım rolü"}},
@@ -236,6 +265,7 @@ def uygulama_olustur(model_on_yukle: bool = True) -> FastAPI:
     )
     uygulama.state.model_on_yukle = model_on_yukle
     uygulama.include_router(router)
+    uygulama.mount("/static", StaticFiles(directory=STATIK_KLASOR), name="static")
     return uygulama
 
 

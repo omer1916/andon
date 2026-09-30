@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+.env
+.claude
+**/__pycache__
+.pytest_cache
+.ruff_cache
+tests
+eval
+data/kilavuzlar/kaynak

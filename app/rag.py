@@ -12,6 +12,8 @@ from pypdf import PdfReader
 
 from app.embedding import Embedder
 
+KILAVUZ_KLASORU = Path(__file__).resolve().parent.parent / "data" / "kilavuzlar"
+
 # "4. HİDROLİK ARIZALARDA İLK KONTROL" veya "4.2 İlk kontrol sırası" gibi numaralı başlıklar.
 # Numaralı adımlar "1) ..." biçiminde yazıldığı için başlıkla karışmaz.
 _BASLIK = re.compile(r"^\d+\.(\d+(\.\d+)*)?\s+[A-ZÇĞİÖŞÜ]")

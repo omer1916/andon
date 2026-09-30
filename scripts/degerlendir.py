@@ -105,7 +105,8 @@ def soruyu_calistir(
 ) -> dict:
     """Soruyu soruyu soranın rolüyle çalıştırır, kaydeder ve kontrol eder.
 
-    Ücretsiz katmanın dakikalık kotasına takılırsa bekleyip yeniden dener.
+    Ücretsiz katmanın dakikalık kotasına (429) ya da sağlayıcının geçici yoğunluğuna (503)
+    takılırsa bekleyip yeniden dener.
     """
     kullanici = Kullanici(KULLANICI, "Değerlendirme", soru["rol"])
     for kalan in range(deneme - 1, -1, -1):
@@ -116,7 +117,8 @@ def soruyu_calistir(
             break
         except SohbetHatasi as hata:
             kaydet(conn, soru["soru"], KULLANICI, llm.saglayici, hata.sonuc)
-            if not isinstance(hata.__cause__, openai.RateLimitError) or kalan == 0:
+            gecici = isinstance(hata.__cause__, openai.RateLimitError | openai.InternalServerError)
+            if not gecici or kalan == 0:
                 raise
             time.sleep(30)
     kaydet(conn, soru["soru"], KULLANICI, llm.saglayici, sonuc)

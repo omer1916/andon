@@ -13,7 +13,9 @@ from openai import NOT_GIVEN, OpenAI
 from app.ayarlar import Ayarlar
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-VARSAYILAN_MODELLER = {"gemini": "gemini-3.8-flash", "ollama": "qwen3:4b"}
+# gemini-3.5-flash-lite: araç çağrısı başına ~0,7 sn. Eylül 2026'daki ölçümde gemini-3.8-flash
+# yoğunluk nedeniyle sık sık 503 döndürdü ve bir soru yeniden denemelerle 47 sn sürdü.
+VARSAYILAN_MODELLER = {"gemini": "gemini-3.5-flash-lite", "ollama": "qwen3:4b"}
 
 # Ücretli katman liste fiyatı, USD / 1M token: (girdi, çıktı). Kaynak: ai.google.dev/pricing
 # (Eylül 2026). Ücretsiz katmanda gerçek maliyet 0'dır; kayıttaki maliyet "bu istek ücretli

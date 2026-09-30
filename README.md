@@ -1,112 +1,235 @@
 # Andon
 
-Fabrika verisi ve bakım kılavuzları üzerinde çalışan bir yapay zekâ asistanı.
-
-Operatör ya da bakım mühendisi sohbet ekranına şöyle bir soru yazar:
+Fabrika verisi ve bakım kılavuzları üzerinde çalışan bir yapay zekâ asistanı. Operatör ya da bakım
+mühendisi sohbet ekranına şöyle bir soru yazar:
 
 > Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?
 
-Asistan sorunun ilk kısmını veritabanından (PostgreSQL) sayarak, ikinci kısmını bakım
-kılavuzlarında (pgvector ile anlamsal arama) arayarak cevaplar ve kaynağını gösterir.
+Asistan sorunun ilk yarısını veritabanında sayarak, ikinci yarısını bakım kılavuzlarında arayarak
+cevaplar ve kılavuzdan aldığı her bilginin kaynağını sayfa numarasıyla gösterir:
+
+![Demo sorusunun gerçek cevabı](docs/demo.jpg)
+
+*Gerçek çıktı: `gemini-3.5-flash-lite`, 3 adım, 3,1 saniye, $0,0022. Sayılar veritabanıyla birebir
+aynı (25 arıza, 13 hidrolik).*
+
+Kaynağa tıklayınca kılavuzun PDF'i o sayfada açılır. Operatör yalnızca operasyon dokümanlarını,
+bakım mühendisi bütün kılavuzları görür.
 
 > Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
+> **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
+> değildir.
 
-## Durum
+## Nasıl çalışıyor
 
-Geliştirme aşamasında. Haftalık plan:
+1. Kullanıcı soruyu yazar; istek JWT ile FastAPI'ye gelir.
+2. API soruyu LLM'e, kullanabileceği araçların listesiyle birlikte gönderir.
+3. LLM sorunun iki parçalı olduğunu anlar ve `ariza_say(hat="Pres 3", baslangic="2026-08-01",
+   bitis="2026-08-31")` ile `dokuman_ara("hidrolik arızada ilk kontrol")` araçlarını çağırır.
+4. İlk araç parametreli bir SQL sorgusu çalıştırır. İkincisi soruyu vektöre çevirir ve pgvector'da,
+   yalnızca kullanıcının rolünün görebildiği kılavuzlarda en yakın parçaları bulur.
+5. LLM iki sonucu birleştirip kaynak göstererek cevap verir. İsteğin token'ı, maliyeti ve süresi
+   kaydedilir.
 
-- [x] Hafta 0: Kurulum
-- [x] Hafta 1: Veritabanı ve sahte veri
-- [x] Hafta 2: API
-- [x] Hafta 3: RAG
-- [x] Hafta 4: LLM ve agent (gerçek Gemini ile demo doğrulaması API anahtarı bekliyor)
-- [x] Hafta 5: Güvenlik ve kalite (değerlendirme sonuçları API anahtarı bekliyor)
-- [ ] Hafta 6: Arayüz ve sunum
+```mermaid
+flowchart LR
+    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar"]
+    API --> AG["Agent döngüsü<br/>(en fazla 6 adım)"]
+    AG <-->|"araç çağrıları"| LLM["Gemini / Ollama<br/>OpenAI uyumlu API"]
+    AG --> T1["ariza_say · stok_sorgula<br/>bakim_talebi_olustur"]
+    AG --> T2["dokuman_ara"]
+    T1 -->|"parametreli SQL"| PG[("PostgreSQL<br/>+ pgvector")]
+    T2 -->|"rol filtreli<br/>vektör araması"| PG
+    T2 --- EMB["multilingual-e5-small"]
+    ING["ingest.py<br/>PDF → parça → vektör"] --> PG
+    AG -->|"token · maliyet · süre"| PG
+```
+
+## Hızlı başlangıç
+
+Gerekenler: Docker Desktop ve bir Gemini API anahtarı ([Google AI Studio](https://aistudio.google.com/apikey),
+ücretsiz katman yeterli).
+
+```bash
+cp .env.example .env          # sonra .env'deki GEMINI_API_KEY satırını doldur
+docker compose up --build
+```
+
+İlk açılışta veritabanı 6 aylık sahte veriyle doldurulur, kılavuzlar işlenir ve embedding modeli
+indirilir (~470 MB, birkaç dakika). Ardından http://localhost:8000 adresinden `operator` ya da
+`bakim` kullanıcısıyla giriş yapılır (parola: `.env`'deki `DEMO_PAROLA`). API belgeleri
+http://localhost:8000/docs adresindedir.
+
+## Teknolojiler
+
+| Katman | Kullanılan |
+|---|---|
+| API | Python 3.12, FastAPI, Pydantic |
+| Veritabanı | PostgreSQL 17, pgvector, psycopg 3 (bağlantı havuzu) |
+| Kılavuz arama | pypdf, sentence-transformers (`intfloat/multilingual-e5-small`) |
+| LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
+| Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
+| Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
+| Kalite | pytest (137 test), ruff, GitHub Actions |
+| Çalıştırma | Docker Compose |
+
+## Tasarım kararları
+
+**LLM'e serbest SQL yazdırılmıyor.** LLM yalnızca dört parametreli aracı çağırabilir:
+
+| Araç | Ne yapar |
+|---|---|
+| `ariza_say(hat, baslangic, bitis, ariza_tipi)` | Arıza sayısı; tiplere ve makinelere göre dağılım |
+| `dokuman_ara(soru, k)` | Kılavuzlarda anlamsal arama; doküman kodu ve sayfa numarasıyla |
+| `stok_sorgula(parca_kodu, sadece_kritik)` | Yedek parça miktarı, yeri, kritik seviye |
+| `bakim_talebi_olustur(makine_kodu, aciklama, oncelik)` | Bakım talebi açar |
+
+- Veritabanına giden her değer SQL parametresidir. LLM ne yazarsa yazsın bir tabloyu silemez, başka
+  bir tabloyu okuyamaz.
+- Her aracın girdisi bir Pydantic modeliyle doğrulanır; LLM'e verilen JSON şeması da aynı modelden
+  üretilir.
+- Hatalar LLM'in düzeltebileceği mesajlar olarak döner ("'Pres 9' adında bir hat yok. Geçerli
+  hatlar: ..."); LLM argümanı düzeltip yeniden dener.
+- Yazma yapan tek araç bakım talebi açar. Sistem istemi onu yalnızca kullanıcı açıkça isterse
+  çağırmasını söyler, kod da bir istekte en fazla bir talebe izin verir.
+
+**Yetki aramanın içinde uygulanıyor.** Arama SQL'i `WHERE d.erisim = ANY(...)` ile çalışır;
+operatörün göremeyeceği bir parça veritabanından hiç gelmez, dolayısıyla LLM'e de ulaşmaz. Erişim
+listesi token'daki rolden gelir, LLM'in argümanlarıyla değiştirilemez. Arama fonksiyonunun
+`erisim` parametresi bilerek zorunludur: yetkiyi unutan bir çağrı her şeyi döndürmek yerine hata
+verir. PDF indirme uç noktası da aynı kurala uyar; yetkisiz rol için dokümanın varlığı bile
+gizlenir (404).
+
+**Her kılavuz parçasının tek bir sayfa numarası var.** PDF'ler önce numaralı başlıklara, sonra 120
+kelimelik, 30 kelime örtüşen pencerelere bölünür; bir parça sayfa sınırını aşmaz. Her parça başlık
+yolunu taşır (`4. HİDROLİK ... > 4.1 Genel yaklaşım`) ve vektöre doküman adıyla birlikte çevrilir.
+"Filtre değiştirilir" gibi kısa bir cümle ancak başlıkla birlikte hangi makineden bahsettiğini
+söyler. Her sayfada tekrar eden üst bilgi ve "Sayfa 4 / 9" satırları atılır.
+
+**Sağlayıcıdan bağımsız LLM.** Gemini de Ollama da OpenAI'nin chat completions biçimini
+desteklediği için tek bir kod yolu ikisiyle çalışır; `.env`'deki `LLM_SAGLAYICI` ile seçilir.
+Modelin döndürdüğü asistan mesajı hiçbir alanı atılmadan geçmişe eklenir: Gemini'nin düşünme
+modelleri araç çağrısına bir imza (thought signature) koyup sonraki turda geri bekler.
+
+**Model ölçerek seçildi.** Başta `gemini-3.8-flash` kullanıldı; Eylül 2026'daki denemelerde
+yoğunluk nedeniyle sık sık 503 döndürdü ve demo sorusu yeniden denemelerle 47 saniye sürdü.
+`gemini-3.5-flash-lite` aynı araç seçimini LLM çağrısı başına ~0,7 saniyede ve yarı maliyetle
+yapıyor. Demo sorusu arayüzden, Docker'daki uygulamada **3,1 saniyede, $0,0022'ye** (3 adım,
+4.542 token) doğru cevaplandı. Model `.env`'deki `LLM_MODEL` ile değiştirilebilir.
+
+**Arıza kaydı makineye bağlı.** Arıza, iş emri ve bakım talebi hatta değil makineye bağlıdır; hatta
+`makineler.hat_id` üzerinden ulaşılır. İki alan birden tutulsaydı bir kaydın makinesi bir hatta,
+`hat_id`'si başka bir hatta görünebilirdi. Kurallar `CHECK` kısıtlarıyla veritabanındadır (arıza
+bitişi başlangıçtan sonra, kapalı iş emrinin kapanış zamanı var ...).
+
+**Her istek kayıt altında.** `llm_istekleri` tablosu kullanıcıyı, modeli, çağrılan araçları, adım
+sayısını, girdi/çıktı token'ını, maliyeti ve süreyi tutar. İstek yarıda hata verse bile (kota, ağ)
+o ana kadar harcanan token'lar kaydedilir. `GET /kullanim` toplamları, ortalama ve p95 süreyi döner.
+
+## Ölçümler
+
+### Kılavuz araması
+
+[`eval/arama_sorulari.jsonl`](eval/arama_sorulari.jsonl): 20 soru, doğru cevap doküman kodu +
+sayfa. Sorular kılavuzdaki cümleler kopyalanmadan, kullanıcının soracağı gibi yazıldı (kılavuzda
+"ışık bariyeri", soruda "ışık perdesi").
+
+| Soru biçimi | isabet@1 | isabet@3 | MRR |
+|---|---|---|---|
+| Türkçe karakterli | %95 | **%100** | 0,97 |
+| Türkçe karaktersiz ("isik", "yag") | %75 | %95 | 0,82 |
+
+```bash
+python scripts/arama_olc.py                        # ya da --turkce-karaktersiz
+```
+
+### Agent değerlendirmesi
+
+[`eval/sorular.jsonl`](eval/sorular.jsonl): agent'ı uçtan uca ölçen 30 soru.
+
+| Kategori | Soru | Ne ölçülüyor |
+|---|---|---|
+| Sayısal | 10 | Doğru aracı çağırıp doğru sayıyı veriyor mu |
+| Doküman | 10 | Doğru sayfayı bulup kaynak gösteriyor mu |
+| Birleşik | 4 | Veritabanı ve kılavuz aynı cevapta (demo sorusu dahil) |
+| Yetki | 3 | Operatöre bakım kılavuzundan bilgi sızıyor mu |
+| Bilinmeyen | 2 | Kılavuzda olmayan bilgi, olmayan hat: uydurmadan "bilmiyorum" diyor mu |
+| Yazma | 1 | İstenince doğru talebi açıyor mu |
+
+Sayısal soruların beklenen cevabı sabit bir sayı değil, SQL'dir; her çalıştırmada veritabanından
+hesaplanır. Talep beklenmeyen 29 soruda ayrıca istenmeden bakım talebi açılıp açılmadığına
+bakılır. Değerlendiricinin kendisi de test edilir: doğru cevabı geçirir; yanlış sayıyı, kaynaksız
+cevabı ve istenmeyen talebi yakalar.
+
+```bash
+python scripts/degerlendir.py      # rapor: eval/sonuclar.md
+pytest -m eval                     # aynı set, her soru bir test
+```
+
+**Sonuçlar henüz yok:** değerlendirme gerçek bir LLM anahtarı gerektiriyor ve bu depo anahtar
+olmadan hazırlandı. Rapor [`eval/sonuclar.md`](eval/sonuclar.md) dosyasına yazılacak.
 
 ## Geliştirme ortamı
 
-Gerekenler: Python 3.12, Git, Docker Desktop.
+Gerekenler: Python 3.12, Docker Desktop.
 
 ```bash
 py -3.12 -m venv .venv
-.venv\Scripts\activate        # Linux/macOS: source .venv/bin/activate
-pip install -e ".[dev]"      # PyTorch (CPU) dahil, ilk kurulum birkaç dakika sürer
+.venv\Scripts\activate                  # Linux/macOS: source .venv/bin/activate
+pip install -e ".[dev]"                 # PyTorch (CPU) dahil, ilk kurulum birkaç dakika sürer
+cp .env.example .env
+
+docker compose up -d db                 # yalnızca veritabanı (localhost:5432)
+python scripts/seed.py                  # 6 aylık sahte veri + demo kullanıcılar
+python scripts/ingest.py                # kılavuz PDF'lerini işle
+uvicorn app.main:app --reload           # http://localhost:8000
+
+python scripts/sor.py "Pres 3 hattında geçen ay kaç arıza oldu?"   # arayüzsüz soru
 ```
 
-Kontroller:
+Kontroller ve testler:
 
 ```bash
-ruff check .
-ruff format --check .
-pytest
+ruff check . && ruff format --check .
+pytest                                  # 137 test; veritabanı kapalıysa DB testleri atlanır
 ```
 
-Her iş kendi branch'inde yapılır ve `main`'e pull request ile birleşir.
+Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
+veriyle doldurulur ve beklenen sonuçlar aynı veriden Python'da hesaplanıp API'nin cevabıyla
+karşılaştırılır. Embedding modeli ve LLM yerine sahte sürümleri kullanılır (kelime eşleşmeli
+embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olmadan 7 saniyede
+çalışır. GitHub Actions her pull request'te ruff'ı ve testleri pgvector'lü bir servis
+konteynerine karşı çalıştırır; veritabanına ulaşılamazsa testler atlanmaz, başarısız olur.
 
-## Veritabanı
+Her iş kendi branch'inde geliştirildi ve pull request ile birleştirildi:
+[#1 iskelet](https://github.com/omer1916/andon/pull/1) ·
+[#2 veritabanı](https://github.com/omer1916/andon/pull/2) ·
+[#3 API](https://github.com/omer1916/andon/pull/3) ·
+[#4 RAG](https://github.com/omer1916/andon/pull/4) ·
+[#5 agent](https://github.com/omer1916/andon/pull/5) ·
+[#6 güvenlik ve kalite](https://github.com/omer1916/andon/pull/6) ·
+[#7 arayüz](https://github.com/omer1916/andon/pull/7)
 
-PostgreSQL 17 ve pgvector Docker içinde çalışır. Ayarları değiştirmek istersen
-`.env.example` dosyasını `.env` adıyla kopyala.
-
-```bash
-docker compose up -d                              # veritabanını başlat (localhost:5432)
-python scripts/seed.py                            # tabloları kur, 6 aylık sahte veri üret
-docker compose exec db psql -U andon -d andon     # SQL konsolu
-```
-
-`seed.py` her çalıştığında tabloları silip yeniden kurar. Aynı veriyi tekrar üretmek için
-bitiş anını sabitle: `python scripts/seed.py --son "2026-09-30 12:00"`.
+## Veri
 
 | Tablo | İçerik |
 |---|---|
-| `hatlar` | Üretim hatları: Pres 1-3, Kaynak 1-2, Montaj 1, Boya 1 |
-| `makineler` | Hatlardaki makineler (örn. `P3-HP`: Pres 3 hidrolik presi) |
-| `ariza_kayitlari` | Makine arızaları: başlangıç/bitiş, tip, önem, hattı durdurup durdurmadığı |
-| `stok` | Yedek parça stoku ve minimum seviyeleri |
+| `hatlar`, `makineler` | 7 hat (Pres 1-3, Kaynak 1-2, Montaj 1, Boya 1), 21 makine |
+| `ariza_kayitlari` | 6 aylık arıza: başlangıç/bitiş, tip, önem, hattı durdurup durdurmadığı |
+| `stok` | Yedek parçalar ve minimum seviyeleri |
 | `is_emirleri` | Arıza müdahaleleri ve periyodik bakımlar, kullanılan parça |
-| `bakim_talepleri` | Operatörlerin açtığı bakım talepleri; agent da buraya yazacak |
+| `bakim_talepleri` | Operatörlerin ve agent'ın açtığı talepler |
+| `kullanicilar` | Demo kullanıcılar (argon2 parola hash'i) |
+| `dokumanlar`, `dokuman_parcalari` | Kılavuzlar ve 384 boyutlu vektörleriyle parçaları |
+| `llm_istekleri` | Agent'ın her isteği: token, maliyet, süre, araçlar |
 
-Şema [`sql/schema.sql`](sql/schema.sql) dosyasında. Arıza, iş emri ve bakım talebi
-kayıtları hatta değil makineye bağlıdır; hatta `makineler.hat_id` üzerinden ulaşılır.
-Böylece bir kaydın makinesi ile hattı birbiriyle çelişemez.
+Sahte veride bilerek desenler var: Pres 3 en çok arıza veren hat, P3-HP'de son iki ayda hidrolik
+arızalar artıyor, pazar günleri arıza az, beş parça minimum stok seviyesinin altında ve seed
+anında üç arıza sürüyor. Elle yazılmış referans sorgular: [`sql/sorular.sql`](sql/sorular.sql).
 
-Elle yazılmış örnek sorgular: [`sql/sorular.sql`](sql/sorular.sql).
-
-## API
-
-```bash
-uvicorn app.main:app --reload
-```
-
-Uç noktalar http://localhost:8000/docs adresinden denenebilir.
-
-| Uç nokta | Ne döner |
-|---|---|
-| `GET /saglik` | Servis ve veritabanı durumu; veritabanına ulaşılamıyorsa 503 |
-| `GET /hatlar` | Üretim hatları ve her hattaki makine sayısı |
-| `GET /arizalar` | Arızalar, yeniden eskiye; `hat`, `baslangic`, `bitis`, `ariza_tipi`, `limit`, `offset` ile filtrelenir |
-
-Demo sorusunun ilk yarısı ("Pres 3 hattında geçen ay kaç arıza oldu?"):
-
-```
-GET /arizalar?hat=Pres 3&baslangic=2026-08-01&bitis=2026-08-31
-```
-
-- Tarihler gün olarak verilir, iki uç da dahildir ve Türkiye saatine göre hesaplanır.
-- Hat adında büyük/küçük harf fark etmez. Olmayan bir hat 404 döner ve cevapta geçerli
-  hatlar listelenir; ileride LLM yanlış hat adı verirse bu mesajdan düzeltebilecek.
-- Tanımsız parametre, geçersiz tarih ya da ters aralık 422 döner.
-
-API testleri `andon_test` adında ayrı bir veritabanı kurup sabit bir tarihle üretilen veriyle
-doldurur. Beklenen sonuçlar aynı veriden Python'da hesaplanıp API'nin cevabıyla
-karşılaştırılır. Veritabanı kapalıysa bu testler atlanır.
-
-## Kılavuzlarda arama (RAG)
-
-`data/kilavuzlar/` altında 4 kılavuz var (toplam 20 sayfa). **Hepsi bu proje için yazılmış
-kurgusal dokümanlardır**; gerçek bir ekipmana veya firmaya ait değildir. Metinleri
-`data/kilavuzlar/kaynak/*.md` dosyalarında, PDF'ler `python scripts/kilavuz_pdf.py` ile üretilir.
-Uygulama yalnızca PDF'leri okur.
+Kılavuzlar (toplam 20 sayfa) Markdown'da yazılıp `scripts/kilavuz_pdf.py` ile PDF'e çevrilir;
+uygulama yalnızca PDF'leri okur. Kılavuzlarda veritabanındaki makine ve stok kodları geçer, böylece
+agent iki kaynağı tek cevapta birleştirebilir ("kılavuz SNS-002'yi söylüyor, stokta 1 adet var").
 
 | Kod | Başlık | Erişim | Sayfa |
 |---|---|---|---|
@@ -115,160 +238,40 @@ Uygulama yalnızca PDF'leri okur.
 | KR-BK-01 | Kaynak Robotu Bakım Kılavuzu | Bakım | 4 |
 | KAL-PR-01 | Kalite Kontrol Prosedürü | Operasyon | 4 |
 
-Kılavuzlarda veritabanındaki makine kodları (`P3-HP`) ve stok kodları (`SNS-002`) geçer; agent
-bir cevapta iki kaynağı birleştirebilir. Erişim seviyesi 5. haftada rol bazlı yetki için
-kullanılacak.
-
-```bash
-python scripts/ingest.py      # PDF'leri oku, parçala, vektöre çevir, pgvector'a yaz
-python scripts/arama_olc.py   # 20 soruluk setle isabeti ölç
-```
-
-İlk çalıştırmada embedding modeli (`intfloat/multilingual-e5-small`, ~470 MB) indirilir.
+## Proje yapısı
 
 ```
-GET /ara?soru=pres hattı arıza ilk kontrol
-→ PRES-BK-01, sayfa 4, "4. HİDROLİK ARIZALARDA İLK KONTROL > 4.2 İlk kontrol sırası"
+app/
+  main.py        FastAPI uç noktaları
+  agent.py       araç döngüsü, sistem istemi, istek kaydı
+  tools.py       agent araçları ve JSON şemaları
+  llm.py         Gemini/Ollama istemcisi, maliyet hesabı
+  rag.py         PDF okuma, parçalama, vektör araması
+  embedding.py   multilingual-e5-small
+  auth.py        JWT, roller, parola hash'i
+  sorgular.py    SQL sorguları
+  static/        sohbet arayüzü
+scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
+sql/             şema ve referans sorgular
+data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
+eval/            arama ve agent değerlendirme setleri
+tests/           137 test
 ```
 
-Nasıl çalışıyor:
+## Bilinen eksikler
 
-1. **Okuma:** pypdf her sayfanın metnini çıkarır. Sayfaların çoğunda aynen tekrar eden satırlar
-   (üst bilgi) ve "Sayfa 4 / 9" satırları atılır.
-2. **Parçalama:** Metin numaralı başlıklara göre bölünür, uzun bölümler 120 kelimelik ve 30
-   kelime örtüşen pencerelere ayrılır. Bir parça sayfa sınırını aşmaz, böylece her parçanın tek
-   bir sayfa numarası olur. Her parça başlık yolunu taşır (`4. HİDROLİK ... > 4.1 Genel yaklaşım`).
-3. **Vektör:** Parça, doküman ve bölüm başlığıyla birlikte 384 boyutlu vektöre çevrilir.
-   "Filtre değiştirilir" gibi kısa bir cümle ancak başlıkla birlikte hangi makineden
-   bahsettiğini söyler.
-4. **Arama:** Soru da vektöre çevrilir; pgvector'da kosinüs mesafesine göre en yakın k parça
-   döner. Vektör indeksi bilerek yok: 67 parçada tam tarama hem hızlı hem kesin.
+- **Agent değerlendirmesi gerçek LLM ile henüz çalıştırılmadı.** Set, değerlendirici ve testleri
+  hazır; anahtar eklenince tek komutla çalışır.
+- **Türkçe karakter kullanılmadan yazılan sorularda arama zayıflıyor** (isabet@1 %95'ten %75'e
+  iniyor). Çözüm adayı: vektör aramasını PostgreSQL tam metin araması + `unaccent` ile birleştiren
+  hibrit arama.
+- **Ölçümler iyimser.** Kılavuzları ve soruları aynı kişi yazdı, koleksiyon küçük (67 parça).
+- **Sohbet geçmişi yok.** Her soru bağımsız; "peki geçen hafta?" gibi bir devam sorusu anlaşılmaz.
+- **Cevap akışı (streaming) yok.** Cevap tamamlanınca bir seferde gelir.
+- **Giriş denemelerine sınır yok.** Hesap kilitleme, istek sınırı ve yenileme token'ı üretim
+  öncesi eklenmeli; kullanıcı yönetimi yok, demo kullanıcılar seed ile gelir.
+- **Ollama yolu denenmedi.** Kod aynı, ama bu makinede Ollama kurulu değildi.
 
-### Ölçüm
+## Lisans
 
-[`eval/arama_sorulari.jsonl`](eval/arama_sorulari.jsonl): 20 soru. Sorular kılavuzdaki
-cümleler kopyalanmadan, kullanıcının soracağı gibi yazıldı (kılavuzda "ışık bariyeri",
-soruda "ışık perdesi"). Doğru cevap doküman kodu + sayfa numarasıdır.
-
-| Soru biçimi | isabet@1 | isabet@3 | MRR |
-|---|---|---|---|
-| Türkçe karakterli | %95 | **%100** | 0,97 |
-| Türkçe karaktersiz ("isik", "yag") | %75 | %95 | 0,82 |
-
-Bu sayılar iyimserdir: kılavuzları ve soruları aynı kişi yazdı, koleksiyon küçük (67 parça) ve
-her sorunun cevabı kılavuzlarda var. Türkçe karaktersiz sorulardaki düşüş gerçek bir zayıflık:
-"sari ve kirmizi isik" sorusu hiç bulunamıyor. Çözüm adayı, vektör aramasını PostgreSQL tam
-metin araması + `unaccent` ile birleştiren hibrit arama.
-
-Testler gerçek model yerine kelime eşleşmesine dayalı sahte bir embedder kullanır. Böylece model
-indirmeden arama akışını ve SQL'i test ederler; anlamsal kaliteyi `arama_olc.py` ölçer.
-
-## Agent
-
-`POST /chat` soruyu LLM'e, kullanabileceği araçların listesiyle birlikte gönderir. LLM araç
-çağırdıkça agent aracı çalıştırıp sonucu geri verir; LLM son cevabı yazana kadar (en fazla 6
-adım) döngü sürer.
-
-| Araç | Ne yapar |
-|---|---|
-| `ariza_say(hat, baslangic, bitis, ariza_tipi)` | Arıza sayısı; tiplere ve makinelere göre dağılım |
-| `dokuman_ara(soru, k)` | Kılavuzlarda anlamsal arama; doküman kodu ve sayfa numarasıyla |
-| `stok_sorgula(parca_kodu, sadece_kritik)` | Yedek parça miktarı, yeri, kritik seviye |
-| `bakim_talebi_olustur(makine_kodu, aciklama, oncelik)` | Bakım talebi açar, numarasını döner |
-
-**LLM'e serbest SQL yazdırılmıyor.** Yalnızca bu dört parametreli fonksiyonu çağırabiliyor:
-
-- Veritabanına giden her değer SQL parametresi; LLM ne yazarsa yazsın bir tabloyu silemez,
-  başka bir tabloyu okuyamaz.
-- Her aracın girdisi bir Pydantic modeliyle doğrulanır; LLM'e verilen JSON şeması da aynı
-  modelden üretilir.
-- Hatalar LLM'in okuyup düzeltebileceği mesajlar olarak döner: "'Pres 9' adında bir hat yok.
-  Geçerli hatlar: Pres 1, ...". Böylece LLM argümanı düzeltip yeniden deneyebilir.
-- Yazma yapan tek araç `bakim_talebi_olustur`. Sistem istemi onu yalnızca kullanıcı açıkça
-  isterse çağırmasını söyler; kod ise bir istekte en fazla bir talep açılmasına izin verir.
-- "Geçen ay" gibi ifadeler için LLM'e sistem isteminde bugünün tarihi verilir; tarihi LLM
-  somut bir aralığa çevirir, sayımı veritabanı yapar.
-
-**Model:** Gemini (`gemini-3.8-flash`), OpenAI uyumlu uç noktası üzerinden. Ollama da aynı
-arayüzü sunduğu için tek bir kod yolu ikisiyle de çalışır:
-
-```bash
-# .env
-LLM_SAGLAYICI=gemini          # ya da ollama
-GEMINI_API_KEY=...            # https://aistudio.google.com/apikey
-# LLM_MODEL=gemini-3.5-flash-lite
-```
-
-```bash
-python scripts/sor.py "Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?"
-```
-
-**Kayıt:** Her istek `llm_istekleri` tablosuna yazılır: kullanıcı, model, soru, cevap, çağrılan
-araçlar, adım sayısı, girdi/çıktı token'ı, maliyet ve süre. İstek yarıda hata verse bile
-(kota, ağ) o ana kadar harcanan token'lar kaydedilir. `GET /kullanim` toplamları, ortalama ve
-p95 süreyi döner. Maliyet, ücretli katman liste fiyatıyla hesaplanır; ücretsiz katmanda gerçek
-maliyet 0'dır.
-
-Testler gerçek LLM yerine senaryolu sahte bir LLM kullanır ("önce şu araçları çağır, sonra şu
-cevabı ver"). Döngü, araç doğrulaması, hata mesajları, token toplamı ve kayıt böylece API
-anahtarı olmadan test edilir.
-
-## Giriş ve yetki
-
-`POST /giris` kullanıcı adı ve parolayla 8 saat (bir vardiya) geçerli bir JWT döner. `/saglik`
-dışındaki bütün uç noktalar token ister. `/docs` sayfasında sağ üstteki **Authorize** ile giriş
-yapılabilir. Seed iki demo kullanıcı oluşturur: `operator` ve `bakim` (parola `.env`'deki
-`DEMO_PAROLA`).
-
-| Rol | Görebildiği dokümanlar | Ek yetki |
-|---|---|---|
-| `operator` | Operatör talimatı, kalite prosedürü | - |
-| `bakim` | Hepsi (bakım kılavuzları dahil) | `GET /kullanim` |
-
-**Yetki aramanın içinde uygulanır.** `dokuman_ara` SQL'i `WHERE d.erisim = ANY(...)` ile
-çalışır; operatörün göremeyeceği bir parça veritabanından hiç gelmez, LLM'e de ulaşmaz. Erişim
-listesi token'daki rolden gelir, LLM'in araç argümanlarıyla değiştirilemez. Filtre
-sıralamadan önce uygulandığı için operatör yine k sonuç alır (yalnızca kendi dokümanlarından).
-Fonksiyonun `erisim` parametresi bilerek zorunludur: yetkiyi unutan bir çağrı her şeyi
-döndürmek yerine hata verir.
-
-Diğer kararlar:
-
-- Parolalar argon2 ile saklanır. Bilinmeyen kullanıcı adında da parola doğrulaması yapılır;
-  yanıt süresinden ya da mesajdan kullanıcı adının var olup olmadığı anlaşılmaz.
-- `/chat`'te kimlik, LLM ayarından önce doğrulanır. Aksi hâlde giriş yapmamış biri "LLM ayarlı
-  değil" hatasından sunucunun durumunu öğrenebilirdi (bir test bunu yakaladı).
-- Testler süresi dolmuş, yanlış anahtarla imzalanmış, imzasız (`alg: none`) ve rolü
-  değiştirilmiş token'ların reddedildiğini doğrular.
-
-## Değerlendirme
-
-[`eval/sorular.jsonl`](eval/sorular.jsonl): agent'ı uçtan uca ölçen 30 soru.
-
-| Kategori | Soru | Ne ölçülüyor |
-|---|---|---|
-| Sayısal | 10 | Doğru aracı çağırıp doğru sayıyı veriyor mu |
-| Doküman | 10 | Doğru sayfayı bulup kaynak gösteriyor mu |
-| Birleşik | 4 | Veritabanı + kılavuz aynı cevapta (demo sorusu dahil) |
-| Yetki | 3 | Operatöre bakım kılavuzundan bilgi sızıyor mu |
-| Bilinmeyen | 2 | Kılavuzda olmayan bilgi, olmayan hat: uydurmadan "bilmiyorum" diyor mu |
-| Yazma | 1 | İstenince doğru talebi açıyor mu |
-
-Sayısal soruların beklenen cevabı sabit bir sayı değil, SQL'dir; her çalıştırmada
-veritabanından hesaplanır. Talep beklenmeyen 29 soruda ayrıca istenmeden bakım talebi açılıp
-açılmadığı kontrol edilir.
-
-```bash
-python scripts/degerlendir.py      # rapor: eval/sonuclar.md
-pytest -m eval                     # aynı set, her soru bir test
-```
-
-Normal `pytest` çalıştırması değerlendirmeyi atlar (LLM kotası harcamasın). Setin tutarlılığı
-ve değerlendiricinin kendisi (doğru cevabı geçirip yanlış sayıyı, kaynaksız cevabı ve
-istenmeyen talebi yakalaması) her testte sahte LLM ile doğrulanır.
-
-## CI
-
-Her pull request'te GitHub Actions ruff ve testleri çalıştırır. Testler pgvector'lü gerçek
-bir PostgreSQL servis konteynerine karşı koşar; veritabanına ulaşılamazsa atlanmaz, başarısız
-olur (`ANDON_DB_ZORUNLU=1`).
+MIT. Veriler ve kılavuzlar kurgusaldır.
