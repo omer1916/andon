@@ -23,7 +23,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from app.auth import Kullanici, token_uret
 from app.db import BAGLANTI_ZAMAN_ASIMI, TZ
 from app.embedding import BOYUT
-from app.main import embedder_getir, uygulama_olustur
+from app.main import embedder_getir, rapor_llm_getir, uygulama_olustur
 from scripts.ingest import dokumanlari_yaz, kilavuzlari_oku
 from scripts.seed import demo_kullanicilari_yaz, veri_uret, veritabanina_yaz
 
@@ -97,6 +97,9 @@ def istemci(test_veritabani):
         mp.setenv("DATABASE_URL", test_veritabani)
         uygulama = uygulama_olustur(model_on_yukle=False)
         uygulama.dependency_overrides[embedder_getir] = SahteEmbedder
+        # .env'de gerçek bir anahtar olsa bile testler LLM'e istek atmasın; rapor LLM'siz de
+        # çıkar. LLM'li rapor testleri bunu senaryolu sahte bir LLM'le değiştirir.
+        uygulama.dependency_overrides[rapor_llm_getir] = lambda: None
         # Varsayılan olarak bakım mühendisi girişi; rol testleri başlığı istek bazında değiştirir.
         with TestClient(uygulama, headers=yetki(BAKIM)) as istemci:
             yield istemci

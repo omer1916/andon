@@ -1,6 +1,6 @@
 """API'nin girdi ve çıktı modelleri."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 NulsuzMetin = Annotated[str, StringConstraints(pattern=r"^[^\x00]*$")]
 
 HatTipi = Literal["pres", "kaynak", "montaj", "boya"]
+VardiyaNo = Literal[1, 2, 3]
+VARDIYA_SAATLERI = {1: 7, 2: 15, 3: 23}  # başlangıç saati
+VARDIYA_SURESI = timedelta(hours=8)
 ArizaTipi = Literal["hidrolik", "mekanik", "elektrik", "sensor", "yazilim", "pnomatik"]
 Onem = Literal["dusuk", "orta", "yuksek"]
 
@@ -101,7 +104,7 @@ class HatOee(OeeDegerleri):
 
 
 class VardiyaOee(OeeDegerleri):
-    vardiya: Literal[1, 2, 3] = Field(description="1: 07-15, 2: 15-23, 3: 23-07")
+    vardiya: VardiyaNo = Field(description="1: 07-15, 2: 15-23, 3: 23-07")
 
 
 class GunlukOee(OeeDegerleri):
@@ -132,6 +135,107 @@ class OeeOzeti(BaseModel):
     gunluk: list[GunlukOee]
     duruslar: list[DurusNedeni] = Field(description="Duruş nedenleri, süreye göre (Pareto)")
     makineler: list[MakineDurusu] = Field(description="Hattı en uzun durduran 5 makine")
+
+
+class RaporIstegi(BaseModel):
+    """`POST /rapor/vardiya` gövdesi. Boş bırakılırsa son tamamlanan vardiya raporlanır."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tarih: date | None = Field(
+        None, description="Vardiyanın başladığı gün", examples=["2026-09-29"]
+    )
+    vardiya: VardiyaNo | None = Field(None, description="1: 07-15, 2: 15-23, 3: 23-07")
+
+    @model_validator(mode="after")
+    def _ikisi_birden(self):
+        if (self.tarih is None) != (self.vardiya is None):
+            raise ValueError("tarih ve vardiya birlikte verilmeli ya da ikisi de boş bırakılmalı")
+        return self
+
+
+RaporMaddesi = Annotated[str, StringConstraints(min_length=3, max_length=300)]
+
+
+class RaporYorumu(BaseModel):
+    """LLM'in (ya da LLM kullanılamazsa kuralların) yazdığı yorum."""
+
+    ozet: str = Field(min_length=10, max_length=800, description="2-3 cümle")
+    dikkat: list[RaporMaddesi] = Field(default_factory=list, max_length=5)
+    oneriler: list[RaporMaddesi] = Field(default_factory=list, max_length=5)
+
+
+class RaporHatSatiri(OeeDegerleri):
+    hat: str
+    son_7_gun_oee: float | None = Field(description="Vardiyadan önceki 7 günün OEE'si")
+
+
+class RaporDurusu(BaseModel):
+    hat: str
+    neden: DurusNedeniKodu
+    ariza_tipi: ArizaTipi | None
+    makine_kodu: str | None
+    sure_dk: int
+
+
+class RaporArizasi(BaseModel):
+    hat: str
+    makine_kodu: str
+    makine_adi: str
+    baslangic: datetime
+    sure_dk: int | None = Field(description="Vardiya sonunda sürüyorsa boş")
+    ariza_tipi: ArizaTipi
+    onem: Onem
+    hat_durdu: bool
+    vardiya_sonunda_suruyor: bool
+    aciklama: str
+
+
+class RaporTalebi(BaseModel):
+    id: int
+    makine_kodu: str
+    hat: str
+    oncelik: Onem
+    aciklama: str
+    olusturma: datetime
+
+
+class KritikParca(BaseModel):
+    parca_kodu: str
+    ad: str
+    miktar: int
+    min_miktar: int
+    birim: str
+
+
+class RaporKullanimi(BaseModel):
+    model: str | None = Field(description="LLM kullanılmadıysa boş")
+    deneme_sayisi: int = Field(description="LLM çağrısı sayısı (0, 1 ya da 2)")
+    girdi_token: int
+    cikti_token: int
+    maliyet_usd: float | None
+    sure_ms: int = Field(description="Raporun hazırlanma süresi, veritabanı dahil")
+
+
+class VardiyaRaporu(BaseModel):
+    tarih: date
+    vardiya: VardiyaNo
+    baslangic: datetime
+    bitis: datetime
+    fabrika: OeeDegerleri
+    hatlar: list[RaporHatSatiri] = Field(description="OEE'si en düşükten yükseğe")
+    duruslar: list[RaporDurusu] = Field(description="Vardiyanın en uzun 8 duruşu")
+    arizalar: list[RaporArizasi] = Field(description="Vardiyada başlayan arızalar")
+    acik_talep_sayisi: int
+    acik_talepler: list[RaporTalebi] = Field(description="Önceliği en yüksek 5 açık talep")
+    kritik_stok: list[KritikParca]
+    yorum: RaporYorumu
+    yorum_kaynagi: Literal["llm", "kural"]
+    yorum_notu: str | None = Field(
+        description="Yorumun neden kurallarla yazıldığı ya da düzeltildiği"
+    )
+    kullanim: RaporKullanimi
+    markdown: str = Field(description="Kopyalanıp paylaşılabilecek düz metin rapor")
 
 
 class AramaIstegi(BaseModel):

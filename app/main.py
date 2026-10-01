@@ -7,6 +7,7 @@ Belgeler: http://localhost:8000/docs  (sağ üstteki "Authorize" ile giriş yap�
 import threading
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime, time
 from pathlib import Path
 from typing import Annotated
 
@@ -18,13 +19,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, agent, rag, sorgular
+from app import __version__, agent, rag, rapor, sorgular
 from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
 from app.ayarlar import ayarlar
-from app.db import havuz_olustur
+from app.db import TZ, havuz_olustur
 from app.embedding import Embedder, TembelEmbedder, varsayilan_embedder
 from app.llm import LLM, LLMAyarHatasi, llm_olustur
 from app.models import (
+    VARDIYA_SAATLERI,
     AramaIstegi,
     AramaSonucu,
     ArizaFiltresi,
@@ -33,10 +35,12 @@ from app.models import (
     KullanimOzeti,
     OeeFiltresi,
     OeeOzeti,
+    RaporIstegi,
     Saglik,
     SohbetCevabi,
     SohbetIstegi,
     Token,
+    VardiyaRaporu,
 )
 from app.rag import KILAVUZ_KLASORU
 from app.tools import AracBaglami
@@ -65,6 +69,15 @@ def llm_getir() -> LLM:
         return llm_olustur(ayarlar())
     except LLMAyarHatasi as hata:
         raise HTTPException(503, str(hata)) from None
+
+
+def rapor_llm_getir() -> LLM | None:
+    """Rapor LLM olmadan da çıkar (yorumu kurallar yazar); ayar eksikse 503 yerine None.
+    Testler bunu None ya da senaryolu sahte bir LLM'le değiştirir."""
+    try:
+        return llm_olustur(ayarlar())
+    except LLMAyarHatasi:
+        return None
 
 
 def _llm_hatasi(hata: BaseException) -> HTTPException | None:
@@ -230,6 +243,39 @@ def chat(
             "sure_ms": sonuc.sure_ms,
         },
     )
+
+
+@router.post(
+    "/rapor/vardiya",
+    response_model=VardiyaRaporu,
+    responses={404: {"description": "Bu vardiya için üretim kaydı yok"}},
+    summary="Vardiya sonu raporu: sayılar veritabanından, yorum LLM'den (sayı denetimli)",
+)
+def vardiya_raporu(
+    kullanici: AktifKullanici,  # kimlik önce: yetkisiz istek veritabanına ve LLM'e ulaşmasın
+    conn: Baglanti,
+    llm: Annotated[LLM | None, Depends(rapor_llm_getir)],
+    istek: RaporIstegi | None = None,
+):
+    istek = istek or RaporIstegi()
+    if istek.tarih is None:
+        baslangic = sorgular.son_vardiya_baslangici(conn)
+        if baslangic is None:
+            raise HTTPException(404, "Henüz tamamlanmış bir vardiya kaydı yok.")
+    else:
+        baslangic = datetime.combine(istek.tarih, time(VARDIYA_SAATLERI[istek.vardiya]), TZ)
+        if not sorgular.vardiya_kayitli_mi(conn, baslangic):
+            aralik = sorgular.uretim_araligi(conn)
+            ek = f" Kayıtlar {aralik[0]} ile {aralik[1]} arasında." if aralik else ""
+            raise HTTPException(
+                404,
+                f"{istek.tarih} {istek.vardiya}. vardiya için kayıt yok: vardiya henüz "
+                "bitmemiş ya da o gün çalışılmamış olabilir (cumartesi 3., pazar 2. ve 3. "
+                f"vardiya yok).{ek}",
+            )
+    sonuc, yorum_sonucu = rapor.rapor_olustur(conn, llm, baslangic)
+    rapor.kaydet(conn, kullanici.kullanici_adi, llm, sonuc, yorum_sonucu)
+    return sonuc
 
 
 @router.get(

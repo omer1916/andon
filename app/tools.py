@@ -105,7 +105,7 @@ DURUS_ADLARI = {
 BILESENLER = ("oee", "kullanilabilirlik", "performans", "kalite")
 
 
-def _yuzde(oran: float | None) -> float | None:
+def yuzde(oran: float | None) -> float | None:
     """LLM hesap yapmasın diye oranlar hazır yüzde olarak verilir (0,7829 -> 78,3)."""
     return None if oran is None else round(oran * 100, 1)
 
@@ -121,12 +121,12 @@ def _oee_hesapla(b: AracBaglami, g: OeeGirdisi) -> dict:
 
     sonuc = {
         **g.model_dump(mode="json"),
-        **{f"{ad}_yuzde": _yuzde(toplam[ad]) for ad in BILESENLER},
+        **{f"{ad}_yuzde": yuzde(toplam[ad]) for ad in BILESENLER},
         **{k: toplam[k] for k in ("vardiya_sayisi", "planli_sure_dk", "durus_dk")},
         "toplam_adet": toplam["toplam_adet"],
         "hurda_adet": toplam["hurda_adet"],
         "vardiyalara_gore_oee_yuzde": {
-            str(v["vardiya"]): _yuzde(v["oee"])
+            str(v["vardiya"]): yuzde(v["oee"])
             for v in sorgular.oee_hesapla(b.conn, **f, grup="vardiya")
         },
         "en_buyuk_duruslar": [
@@ -134,7 +134,7 @@ def _oee_hesapla(b: AracBaglami, g: OeeGirdisi) -> dict:
                 "neden": DURUS_ADLARI.get(d["neden"]) or f"arıza ({d['ariza_tipi']})",
                 "sure_dk": d["sure_dk"],
                 "adet": d["adet"],
-                "pay_yuzde": _yuzde(d["pay"]),
+                "pay_yuzde": yuzde(d["pay"]),
             }
             for d in sorgular.durus_pareto(b.conn, **f)[:5]
         ],
@@ -142,7 +142,7 @@ def _oee_hesapla(b: AracBaglami, g: OeeGirdisi) -> dict:
     }
     if g.hat is None:
         sonuc["hatlara_gore_oee_yuzde"] = {
-            h["hat"]: _yuzde(h["oee"]) for h in sorgular.oee_hesapla(b.conn, **f, grup="hat")
+            h["hat"]: yuzde(h["oee"]) for h in sorgular.oee_hesapla(b.conn, **f, grup="hat")
         }
     return sonuc
 

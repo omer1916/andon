@@ -20,6 +20,7 @@
     <nav class="sekmeler" id="sekmeler" aria-label="Ekranlar" hidden>
       <button type="button" class="sekme" data-ekran="sohbet">Asistan</button>
       <button type="button" class="sekme" data-ekran="oee">OEE</button>
+      <button type="button" class="sekme" data-ekran="rapor">Vardiya raporu</button>
     </nav>
     <div class="oturum" id="oturum" hidden>
       <span class="kim"><span id="ad-soyad"></span> <span class="rol" id="rol"></span></span>
@@ -112,6 +113,78 @@
         </div>
         <button type="button" class="ana-dugme asistana-sor" id="oee-sor">Asistana sor: OEE neden bu seviyede?</button>
       </div>
+    </section>
+
+    <section id="rapor-ekrani" class="panel-ekrani" aria-labelledby="rapor-baslik" hidden>
+      <div class="panel-ust">
+        <div>
+          <h1 id="rapor-baslik">Vardiya raporu</h1>
+          <p class="soluk">Sayılar veritabanından hesaplanır. Yorumu asistan yazar; yorumdaki her
+            sayı verilerle karşılaştırılır, tutmazsa yorum reddedilir.</p>
+        </div>
+        <form id="rapor-formu" class="filtre">
+          <label>Vardiya
+            <select name="secim">
+              <option value="son">Son tamamlanan vardiya</option>
+              <option value="sec">Tarih ve vardiya seç</option>
+            </select>
+          </label>
+          <label data-secili-vardiya hidden>Tarih
+            <input type="date" name="tarih">
+          </label>
+          <label data-secili-vardiya hidden>No
+            <select name="vardiya">
+              <option value="1">1 (07–15)</option>
+              <option value="2">2 (15–23)</option>
+              <option value="3">3 (23–07)</option>
+            </select>
+          </label>
+          <button type="submit" class="ana-dugme" id="rapor-dugmesi">Raporu hazırla</button>
+        </form>
+      </div>
+      <p class="soluk" id="rapor-durum" role="status" hidden></p>
+      <article id="rapor-icerik" tabindex="-1" aria-labelledby="rapor-adi" hidden>
+        <div class="rapor-ust">
+          <h2 id="rapor-adi"></h2>
+          <div class="rapor-araclar">
+            <button type="button" class="metin-dugme" id="rapor-kopyala">Metni kopyala</button>
+            <button type="button" class="metin-dugme" id="rapor-yazdir">Yazdır</button>
+          </div>
+        </div>
+        <div class="kpi-izgara" id="rapor-kpi"></div>
+        <div class="panel-izgara">
+          <section class="panel-kart genis" aria-labelledby="rapor-yorum-baslik">
+            <h3 id="rapor-yorum-baslik">Yorum <span class="rozet" id="rapor-yorum-kaynagi"></span></h3>
+            <p id="rapor-ozet"></p>
+            <div class="yorum-maddeleri">
+              <div id="rapor-dikkat"></div>
+              <div id="rapor-oneriler"></div>
+            </div>
+            <p class="soluk kucuk" id="rapor-yorum-notu" hidden></p>
+          </section>
+          <section class="panel-kart genis" aria-labelledby="rapor-hatlar-baslik">
+            <h3 id="rapor-hatlar-baslik">Hatlar</h3>
+            <div id="rapor-hatlar" class="tablo-kap"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="rapor-durus-baslik">
+            <h3 id="rapor-durus-baslik">En uzun duruşlar</h3>
+            <div id="rapor-duruslar"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="rapor-ariza-baslik">
+            <h3 id="rapor-ariza-baslik">Vardiyada başlayan arızalar</h3>
+            <div id="rapor-arizalar"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="rapor-talep-baslik">
+            <h3 id="rapor-talep-baslik">Açık bakım talepleri</h3>
+            <div id="rapor-talepler"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="rapor-stok-baslik">
+            <h3 id="rapor-stok-baslik">Minimum seviyenin altındaki parçalar</h3>
+            <div id="rapor-stok"></div>
+          </section>
+        </div>
+        <p class="soluk kucuk" id="rapor-kullanim"></p>
+      </article>
     </section>
   </main>
 

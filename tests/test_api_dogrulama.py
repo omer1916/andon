@@ -32,6 +32,17 @@ OEE_GECERSIZ = {
     "hat-nul": {"hat": "Pres\x003"},
 }
 
+RAPOR_GECERSIZ = {
+    "yalniz-tarih": {"tarih": "2026-09-29"},
+    "yalniz-vardiya": {"vardiya": 2},
+    "vardiya-4": {"tarih": "2026-09-29", "vardiya": 4},
+    "vardiya-sifir": {"tarih": "2026-09-29", "vardiya": 0},
+    "vardiya-metin": {"tarih": "2026-09-29", "vardiya": "gece"},
+    "tarih-yok-gun": {"tarih": "2026-02-30", "vardiya": 1},
+    "fazla-alan": {"tarih": "2026-09-29", "vardiya": 1, "hat": "Pres 3"},
+    "liste": [1, 2],
+}
+
 ARA_GECERSIZ = {
     "soru-yok": {},
     "soru-kisa": {"soru": "ab"},
@@ -72,6 +83,11 @@ def test_arizalar_gecersiz_parametre_422(istemci, parametreler):
 @pytest.mark.parametrize("parametreler", OEE_GECERSIZ.values(), ids=OEE_GECERSIZ.keys())
 def test_oee_gecersiz_parametre_422(istemci, parametreler):
     assert istemci.get("/oee", params=parametreler).status_code == 422
+
+
+@pytest.mark.parametrize("govde", RAPOR_GECERSIZ.values(), ids=RAPOR_GECERSIZ.keys())
+def test_rapor_gecersiz_govde_422(istemci, govde):
+    assert istemci.post("/rapor/vardiya", json=govde).status_code == 422
 
 
 @pytest.mark.parametrize("parametreler", ARA_GECERSIZ.values(), ids=ARA_GECERSIZ.keys())
