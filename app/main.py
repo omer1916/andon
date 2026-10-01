@@ -31,6 +31,8 @@ from app.models import (
     ArizaListesi,
     Hat,
     KullanimOzeti,
+    OeeFiltresi,
+    OeeOzeti,
     Saglik,
     SohbetCevabi,
     SohbetIstegi,
@@ -124,6 +126,12 @@ def hatlar(conn: Baglanti, _: AktifKullanici):
     return sorgular.hatlari_getir(conn)
 
 
+def _hat_dogrula(conn: psycopg.Connection, hat: str | None) -> None:
+    if hat is not None and sorgular.hat_adini_bul(conn, hat) is None:
+        gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(conn))
+        raise HTTPException(404, f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+
+
 @router.get(
     "/arizalar",
     response_model=ArizaListesi,
@@ -131,11 +139,29 @@ def hatlar(conn: Baglanti, _: AktifKullanici):
     summary="Arızaları hat, tarih aralığı ve tipe göre listeler",
 )
 def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti, _: AktifKullanici):
-    if filtre.hat is not None and sorgular.hat_adini_bul(conn, filtre.hat) is None:
-        gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(conn))
-        raise HTTPException(404, f"'{filtre.hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+    _hat_dogrula(conn, filtre.hat)
     toplam, kayitlar = sorgular.arizalari_getir(conn, **filtre.model_dump())
     return ArizaListesi(toplam=toplam, arizalar=kayitlar)
+
+
+@router.get(
+    "/oee",
+    response_model=OeeOzeti,
+    responses={404: {"description": "Verilen adda hat yok"}},
+    summary="OEE ve bileşenleri: toplam, hatlara, vardiyalara ve günlere göre; duruş Pareto'su",
+)
+def oee(filtre: Annotated[OeeFiltresi, Query()], conn: Baglanti, _: AktifKullanici):
+    _hat_dogrula(conn, filtre.hat)
+    f = filtre.model_dump()
+    (toplam,) = sorgular.oee_hesapla(conn, **f)
+    return OeeOzeti(
+        toplam=toplam,
+        hatlara_gore=sorgular.oee_hesapla(conn, **f, grup="hat"),
+        vardiyalara_gore=sorgular.oee_hesapla(conn, **f, grup="vardiya"),
+        gunluk=sorgular.oee_hesapla(conn, **f, grup="gun"),
+        duruslar=sorgular.durus_pareto(conn, **f),
+        makineler=sorgular.durduran_makineler(conn, **f),
+    )
 
 
 @router.get(

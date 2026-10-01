@@ -12,13 +12,19 @@ Veride bilerek bırakılmış desenler var, sorgu yazarken bunları bulabilmelis
 - Hafta sonu, özellikle pazar, üretim az olduğu için arıza da az.
 - Birkaç yedek parça minimum stok seviyesinin altında.
 - Seed anında 3 arıza hâlâ sürüyor; biri Pres 3'ü durdurmuş durumda.
+- Pres 3'ün OEE'si en düşük: hem en çok duran hat hem de tasarım hızının altında çalışıyor.
+- Pres hatlarında en büyük duruş nedeni arıza değil kalıp değişimi; Pres 3'te bir kalıp
+  değişimi diğer preslerin 1,5 katı sürüyor.
+- Pres 3'te son iki ayda hurda oranı üç katına çıkıyor (P3-HP'deki hidrolik sorunlarla aynı dönem).
+- Gece vardiyasında (3. vardiya) performans gündüzden düşük.
 """
 
 import argparse
 import math
 import random
 import sys
-from datetime import datetime, time, timedelta
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import psycopg
@@ -167,7 +173,40 @@ BAKIM_TALEBI_ACIKLAMALARI = [
     "Acil stop butonu sıkışıyor",
 ]
 
-TABLOLAR = ["hatlar", "makineler", "stok", "ariza_kayitlari", "is_emirleri", "bakim_talepleri"]
+# Vardiyalar: (numara, başlangıç saati). Her vardiya 8 saat, bunun 30 dakikası planlı mola.
+VARDIYALAR = [(1, 7), (2, 15), (3, 23)]
+VARDIYA_DK = 480
+MOLA_DK = 30
+# Hafta sonu üretim az: cumartesi iki, pazar tek vardiya. Gün, vardiyanın başladığı gündür.
+CALISAN_VARDIYALAR = {5: (1, 2), 6: (1,)}  # listede olmayan gün: üç vardiya
+
+# Hat tipine göre: (ideal çevrim süresi sn/parça, olağan performans, olağan hurda oranı)
+URETIM_PARAMETRELERI = {
+    "pres": (6.0, 0.90, 0.012),
+    "kaynak": (40.0, 0.88, 0.008),
+    "montaj": (55.0, 0.86, 0.006),
+    "boya": (75.0, 0.89, 0.025),
+}
+PRES_3_PERFORMANSI = 0.80  # 2009 model hat, tasarım hızının altında çalışıyor
+GECE_PERFORMANS_KAYBI = 0.03
+PRES_3_HURDA_CARPANI = 3.0  # son 60 gün: hidrolik basınç dalgalanması ölçü hatası yapıyor
+
+# Arıza dışı duruşlar. Ürün değişimi (kalıp, fikstür, renk, model), hat tipine göre:
+# (vardiya başına beklenen değişim sayısı, değişimin medyan süresi dk)
+URUN_DEGISIMI = {"pres": (1.2, 30), "kaynak": (0.5, 25), "montaj": (0.4, 20), "boya": (1.5, 15)}
+PRES_3_DEGISIM_DK = 45  # eski hat: kalıp değişimi diğer preslerin 1,5 katı sürüyor
+MALZEME_BEKLEME = (0.15, 20)  # (vardiyada yaşanma olasılığı, medyan süresi dk)
+
+TABLOLAR = [
+    "hatlar",
+    "makineler",
+    "stok",
+    "ariza_kayitlari",
+    "is_emirleri",
+    "bakim_talepleri",
+    "vardiya_uretimi",
+    "vardiya_duruslari",
+]
 
 Kayit = dict[str, object]
 
@@ -205,7 +244,9 @@ def veri_uret(son_an: datetime, tohum: int = 42) -> dict[str, list[Kayit]]:
     hat_carpani: dict[int, float] = {}
     hat_tipi: dict[int, str] = {}
     for hat_id, (ad, tip, carpan) in enumerate(HATLAR, start=1):
-        hatlar.append({"id": hat_id, "ad": ad, "tip": tip})
+        hatlar.append(
+            {"id": hat_id, "ad": ad, "tip": tip, "ideal_cevrim_sn": URETIM_PARAMETRELERI[tip][0]}
+        )
         hat_carpani[hat_id], hat_tipi[hat_id] = carpan, tip
         kisaltma = ad[0] + ad.split()[-1]  # "Pres 3" -> "P3"
         for ek, makine_adi in MAKINELER[tip]:
@@ -368,6 +409,12 @@ def veri_uret(son_an: datetime, tohum: int = 42) -> dict[str, list[Kayit]]:
         )
     bakim_talepleri = _numarala(bakim_talepleri, "olusturma")
 
+    # Üretim verisi kendi rastgele sayı üreteciyle üretilir: yukarıdaki tablolar, üretim verisi
+    # eklenmeden önceki hâlleriyle birebir aynı kalır.
+    vardiyalar, duruslar = _uretim_verisi_uret(
+        random.Random(f"uretim-{tohum}"), son_an, ilk_gun, hatlar, makineler, arizalar, is_emirleri
+    )
+
     return {
         "hatlar": hatlar,
         "makineler": makineler,
@@ -375,7 +422,157 @@ def veri_uret(son_an: datetime, tohum: int = 42) -> dict[str, list[Kayit]]:
         "ariza_kayitlari": arizalar,
         "is_emirleri": is_emirleri,
         "bakim_talepleri": bakim_talepleri,
+        "vardiya_uretimi": vardiyalar,
+        "vardiya_duruslari": duruslar,
     }
+
+
+def vardiya_baslangici(an: datetime) -> datetime:
+    """`an`'ın içinde bulunduğu vardiyanın başlangıcı: 07:00, 15:00 ya da 23:00 (Türkiye saati)."""
+    yerel = an.astimezone(TZ)
+    if yerel.hour < 7:
+        return datetime.combine(yerel.date() - timedelta(days=1), time(23), TZ)
+    saat = 23 if yerel.hour >= 23 else 15 if yerel.hour >= 15 else 7
+    return datetime.combine(yerel.date(), time(saat), TZ)
+
+
+def _degdigi_vardiyalar(bas: datetime, bit: datetime) -> list[datetime]:
+    """[bas, bit) aralığının değdiği vardiyaların başlangıçları."""
+    sonuc = []
+    v_bas = vardiya_baslangici(bas)
+    while v_bas < bit:
+        sonuc.append(v_bas)
+        v_bas += timedelta(minutes=VARDIYA_DK)
+    return sonuc
+
+
+def _dk(bas: datetime, bit: datetime) -> int:
+    """İki an arasındaki tam dakika (veride bütün anlar dakika başına denk gelir)."""
+    return max(0, round((bit - bas).total_seconds() / 60))
+
+
+def _birlestir(araliklar: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    """Çakışan aralıkları birleştirir; boş aralıkları atar."""
+    sonuc: list[tuple[datetime, datetime]] = []
+    for bas, bit in sorted(a for a in araliklar if a[1] > a[0]):
+        if sonuc and bas <= sonuc[-1][1]:
+            sonuc[-1] = (sonuc[-1][0], max(sonuc[-1][1], bit))
+        else:
+            sonuc.append((bas, bit))
+    return sonuc
+
+
+def _uretim_verisi_uret(
+    rng: random.Random,
+    son_an: datetime,
+    ilk_gun: date,
+    hatlar: list[Kayit],
+    makineler: list[Kayit],
+    arizalar: list[Kayit],
+    is_emirleri: list[Kayit],
+) -> tuple[list[Kayit], list[Kayit]]:
+    """Her hattın tamamlanmış her vardiyası için üretim kaydı ve duruşlarını üretir.
+
+    Arıza duruşları arıza kayıtlarından hesaplanır: hattı durduran arızanın vardiyanın içinde
+    kalan dakikaları. Çakışan dakikalar önce başlayan arızaya yazılır, planlı bakımla örtüşen
+    dakikalar duruş sayılmaz. Ürün değişimi ve malzeme beklemesi kalan süreden düşer; toplam
+    duruş planlı süreyi aşamaz.
+    """
+    makine_hatti = {m["id"]: m["hat_id"] for m in makineler}
+
+    durduranlar: dict[tuple[int, datetime], list[Kayit]] = defaultdict(list)
+    for ariza in arizalar:
+        if ariza["hat_durdu"]:
+            for v_bas in _degdigi_vardiyalar(ariza["baslangic"], ariza["bitis"] or son_an):
+                durduranlar[(makine_hatti[ariza["makine_id"]], v_bas)].append(ariza)
+
+    bakimlar: dict[tuple[int, datetime], list[tuple[datetime, datetime]]] = defaultdict(list)
+    for emir in is_emirleri:
+        if emir["tip"] == "periyodik":
+            bitis = emir["kapanis"] or son_an
+            for v_bas in _degdigi_vardiyalar(emir["acilis"], bitis):
+                bakimlar[(makine_hatti[emir["makine_id"]], v_bas)].append((emir["acilis"], bitis))
+
+    vardiyalar: list[Kayit] = []
+    duruslar: list[Kayit] = []
+    for gun_no in range(GUN_SAYISI):
+        gun = ilk_gun + timedelta(days=gun_no)
+        for no, saat in VARDIYALAR:
+            if no not in CALISAN_VARDIYALAR.get(gun.weekday(), (1, 2, 3)):
+                continue
+            v_bas = datetime.combine(gun, time(saat), TZ)
+            v_bit = v_bas + timedelta(minutes=VARDIYA_DK)
+            if v_bit > son_an:
+                continue  # yalnızca tamamlanmış vardiyalar
+
+            for hat in hatlar:
+                anahtar = (hat["id"], v_bas)
+                bakim = _birlestir(
+                    [(max(b, v_bas), min(e, v_bit)) for b, e in bakimlar.get(anahtar, [])]
+                )
+                planli = VARDIYA_DK - MOLA_DK - sum(_dk(b, e) for b, e in bakim)
+                vardiya_id = len(vardiyalar) + 1
+
+                olaylar: list[tuple[str, int | None, int]] = []  # (neden, arıza id, süre dk)
+                kapsanan = v_bas
+                for ariza in sorted(durduranlar.get(anahtar, []), key=lambda a: a["baslangic"]):
+                    bas = max(ariza["baslangic"], kapsanan)
+                    bit = min(ariza["bitis"] or son_an, v_bit)
+                    if bit <= bas:
+                        continue
+                    kapsanan = bit
+                    planli_bakimda = sum(_dk(max(bas, b), min(bit, e)) for b, e in bakim)
+                    olaylar.append(("ariza", ariza["id"], _dk(bas, bit) - planli_bakimda))
+
+                beklenen, medyan = URUN_DEGISIMI[hat["tip"]]
+                if hat["ad"] == "Pres 3":
+                    medyan = PRES_3_DEGISIM_DK
+                for _ in range(_poisson(rng, beklenen)):
+                    sure = round(rng.lognormvariate(math.log(medyan), 0.35))
+                    olaylar.append(("urun_degisimi", None, sure))
+                olasilik, medyan = MALZEME_BEKLEME
+                if rng.random() < olasilik:
+                    sure = round(rng.lognormvariate(math.log(medyan), 0.5))
+                    olaylar.append(("malzeme_bekleme", None, sure))
+
+                kalan = planli  # hattın çalıştığı süre; her duruş bundan düşer
+                for neden, ariza_id, sure in olaylar:
+                    sure = min(sure, kalan)
+                    if sure > 0:
+                        duruslar.append(
+                            {
+                                "id": len(duruslar) + 1,
+                                "vardiya_id": vardiya_id,
+                                "neden": neden,
+                                "ariza_id": ariza_id,
+                                "sure_dk": sure,
+                            }
+                        )
+                        kalan -= sure
+
+                ideal, performans, hurda_orani = URETIM_PARAMETRELERI[hat["tip"]]
+                if hat["ad"] == "Pres 3":
+                    performans = PRES_3_PERFORMANSI
+                    if gun_no >= GUN_SAYISI - 60:
+                        hurda_orani *= PRES_3_HURDA_CARPANI
+                if no == 3:
+                    performans -= GECE_PERFORMANS_KAYBI
+                performans = min(0.98, max(0.5, rng.gauss(performans, 0.03)))
+                toplam = int(kalan * 60 / ideal * performans)
+                hurda_olasiligi = min(1.0, hurda_orani * rng.lognormvariate(0, 0.3))
+                vardiyalar.append(
+                    {
+                        "id": vardiya_id,
+                        "hat_id": hat["id"],
+                        "vardiya": no,
+                        "baslangic": v_bas,
+                        "bitis": v_bit,
+                        "planli_sure_dk": planli,
+                        "toplam_adet": toplam,
+                        "hurda_adet": rng.binomialvariate(toplam, hurda_olasiligi),
+                    }
+                )
+    return vardiyalar, duruslar
 
 
 def veritabanina_yaz(conn: psycopg.Connection, veri: dict[str, list[Kayit]]) -> None:

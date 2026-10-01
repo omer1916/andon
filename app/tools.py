@@ -74,12 +74,77 @@ class BakimTalebiGirdisi(BaseModel):
     oncelik: Onem
 
 
-def _ariza_say(b: AracBaglami, g: ArizaSayGirdisi) -> dict:
-    if g.hat is not None and sorgular.hat_adini_bul(b.conn, g.hat) is None:
+class OeeGirdisi(BaseModel):
+    hat: str | None = Field(None, description="Hat adı, örn. 'Pres 3'. Boşsa bütün fabrika.")
+    baslangic: date = Field(description="Aralığın ilk günü (dahil), YYYY-AA-GG")
+    bitis: date = Field(description="Aralığın son günü (dahil), YYYY-AA-GG")
+
+    @model_validator(mode="after")
+    def _tarih_sirasi(self):
+        if self.baslangic > self.bitis:
+            raise ValueError("baslangic, bitis'ten sonra olamaz")
+        return self
+
+
+def _hat_dogrula(b: AracBaglami, hat: str | None) -> None:
+    if hat is not None and sorgular.hat_adini_bul(b.conn, hat) is None:
         gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(b.conn))
-        raise AracHatasi(f"'{g.hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+        raise AracHatasi(f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+
+
+def _ariza_say(b: AracBaglami, g: ArizaSayGirdisi) -> dict:
+    _hat_dogrula(b, g.hat)
     ozet = sorgular.ariza_ozeti(b.conn, **g.model_dump())
     return {**g.model_dump(mode="json"), **ozet}
+
+
+DURUS_ADLARI = {
+    "urun_degisimi": "ürün değişimi (kalıp, fikstür, renk, model)",
+    "malzeme_bekleme": "malzeme bekleme",
+}
+BILESENLER = ("oee", "kullanilabilirlik", "performans", "kalite")
+
+
+def _yuzde(oran: float | None) -> float | None:
+    """LLM hesap yapmasın diye oranlar hazır yüzde olarak verilir (0,7829 -> 78,3)."""
+    return None if oran is None else round(oran * 100, 1)
+
+
+def _oee_hesapla(b: AracBaglami, g: OeeGirdisi) -> dict:
+    _hat_dogrula(b, g.hat)
+    f = g.model_dump()
+    (toplam,) = sorgular.oee_hesapla(b.conn, **f)
+    if toplam["vardiya_sayisi"] == 0:
+        aralik = sorgular.uretim_araligi(b.conn)
+        ek = f" Üretim verisi {aralik[0]} ile {aralik[1]} arasında." if aralik else ""
+        raise AracHatasi(f"Bu aralıkta tamamlanmış vardiya kaydı yok.{ek}")
+
+    sonuc = {
+        **g.model_dump(mode="json"),
+        **{f"{ad}_yuzde": _yuzde(toplam[ad]) for ad in BILESENLER},
+        **{k: toplam[k] for k in ("vardiya_sayisi", "planli_sure_dk", "durus_dk")},
+        "toplam_adet": toplam["toplam_adet"],
+        "hurda_adet": toplam["hurda_adet"],
+        "vardiyalara_gore_oee_yuzde": {
+            str(v["vardiya"]): _yuzde(v["oee"])
+            for v in sorgular.oee_hesapla(b.conn, **f, grup="vardiya")
+        },
+        "en_buyuk_duruslar": [
+            {
+                "neden": DURUS_ADLARI.get(d["neden"]) or f"arıza ({d['ariza_tipi']})",
+                "sure_dk": d["sure_dk"],
+                "adet": d["adet"],
+                "pay_yuzde": _yuzde(d["pay"]),
+            }
+            for d in sorgular.durus_pareto(b.conn, **f)[:5]
+        ],
+        "en_cok_durduran_makineler": sorgular.durduran_makineler(b.conn, **f, limit=3),
+    }
+    if g.hat is None:
+        sonuc["hatlara_gore_oee_yuzde"] = {
+            h["hat"]: _yuzde(h["oee"]) for h in sorgular.oee_hesapla(b.conn, **f, grup="hat")
+        }
+    return sonuc
 
 
 def _dokuman_ara(b: AracBaglami, g: DokumanAraGirdisi) -> list[dict]:
@@ -146,6 +211,15 @@ ARACLAR = {
             "yapar. Doküman kodu ve sayfa numarasıyla en alakalı parçaları döner.",
             DokumanAraGirdisi,
             _dokuman_ara,
+        ),
+        Arac(
+            "oee_hesapla",
+            "Bir hattın (ya da bütün fabrikanın) verilen tarih aralığındaki OEE'sini ve "
+            "bileşenlerini (kullanılabilirlik, performans, kalite) yüzde olarak hesaplar. "
+            "Vardiyalara göre OEE'yi, en büyük duruş nedenlerini (arıza tipi, ürün değişimi, "
+            "malzeme bekleme) ve hattı en uzun durduran makineleri de döner.",
+            OeeGirdisi,
+            _oee_hesapla,
         ),
         Arac(
             "stok_sorgula",

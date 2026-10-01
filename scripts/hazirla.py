@@ -44,11 +44,20 @@ def _dolu_mu(conn: psycopg.Connection, tablo: str) -> bool:
 def main() -> None:
     veritabanini_bekle()
     with baglan() as conn:
-        seed_gerekli = not _dolu_mu(conn, "hatlar")
+        operasyon_var = _dolu_mu(conn, "hatlar")
+        # Üretim tabloları sonradan eklendi: eski bir veritabanında yoksa seed yeniden çalışır.
+        seed_gerekli = not operasyon_var or not _dolu_mu(conn, "vardiya_uretimi")
         ingest_gerekli = not _dolu_mu(conn, "dokuman_parcalari")
 
     if seed_gerekli:
-        print("Operasyon verisi yok; sahte veri üretiliyor...", flush=True)
+        if operasyon_var:
+            print(
+                "Üretim (OEE) verisi yok; bütün sahte veri yeniden üretiliyor. Daha önce açılan "
+                "bakım talepleri silinir, LLM kayıtları korunur.",
+                flush=True,
+            )
+        else:
+            print("Operasyon verisi yok; sahte veri üretiliyor...", flush=True)
         if ayarlar().demo_parola == Ayarlar.model_fields["demo_parola"].default:
             print(
                 "UYARI: Demo kullanıcılar varsayılan parolayla oluşturuluyor. Uygulamayı ağa "

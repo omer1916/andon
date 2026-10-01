@@ -63,6 +63,77 @@ class ArizaListesi(BaseModel):
     arizalar: list[Ariza]
 
 
+DurusNedeniKodu = Literal["ariza", "urun_degisimi", "malzeme_bekleme"]
+
+
+class OeeFiltresi(BaseModel):
+    """`GET /oee` sorgu parametreleri. Vardiya başladığı güne sayılır; iki uç da dahildir."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hat: NulsuzMetin | None = Field(
+        None, description="Hat adı; boşsa bütün fabrika", examples=["Pres 3"]
+    )
+    baslangic: date | None = Field(None, examples=["2026-09-01"])
+    bitis: date | None = Field(None, examples=["2026-09-30"])
+
+    @model_validator(mode="after")
+    def _tarih_sirasi(self):
+        if self.baslangic and self.bitis and self.baslangic > self.bitis:
+            raise ValueError("baslangic, bitis'ten sonra olamaz")
+        return self
+
+
+class OeeDegerleri(BaseModel):
+    vardiya_sayisi: int
+    planli_sure_dk: int = Field(description="Vardiya süresi - mola - planlı bakım")
+    durus_dk: int = Field(description="Arıza, ürün değişimi ve malzeme beklemesi")
+    toplam_adet: int
+    hurda_adet: int
+    kullanilabilirlik: float | None = Field(description="0-1 arası; veri yoksa boş")
+    performans: float | None
+    kalite: float | None = Field(description="Hatlar birleşince ideal çevrim süresiyle ağırlıklı")
+    oee: float | None = Field(description="kullanılabilirlik x performans x kalite")
+
+
+class HatOee(OeeDegerleri):
+    hat: str
+
+
+class VardiyaOee(OeeDegerleri):
+    vardiya: Literal[1, 2, 3] = Field(description="1: 07-15, 2: 15-23, 3: 23-07")
+
+
+class GunlukOee(OeeDegerleri):
+    gun: date
+
+
+class DurusNedeni(BaseModel):
+    neden: DurusNedeniKodu
+    ariza_tipi: ArizaTipi | None = Field(description="Yalnızca neden 'ariza' ise")
+    adet: int = Field(description="Arızada farklı arıza sayısı, diğerlerinde olay sayısı")
+    sure_dk: int
+    pay: float = Field(description="Toplam duruş içindeki payı, 0-1")
+    kumulatif_pay: float = Field(description="Pareto: bu satıra kadarki payların toplamı")
+
+
+class MakineDurusu(BaseModel):
+    makine_kodu: str
+    makine_adi: str
+    hat: str
+    ariza_sayisi: int
+    sure_dk: int = Field(description="Arızasıyla hattı durdurduğu süre")
+
+
+class OeeOzeti(BaseModel):
+    toplam: OeeDegerleri
+    hatlara_gore: list[HatOee]
+    vardiyalara_gore: list[VardiyaOee]
+    gunluk: list[GunlukOee]
+    duruslar: list[DurusNedeni] = Field(description="Duruş nedenleri, süreye göre (Pareto)")
+    makineler: list[MakineDurusu] = Field(description="Hattı en uzun durduran 5 makine")
+
+
 class AramaIstegi(BaseModel):
     """`GET /ara` sorgu parametreleri."""
 

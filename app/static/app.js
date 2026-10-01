@@ -1,6 +1,7 @@
 // Andon sohbet ekranı. Çerçeve yok; API'ye fetch ile konuşur.
 
 import { guvenliMarkdown } from "./metin.js";
+import { oeeEkrani } from "./oee.js";
 
 const OTURUM_ANAHTARI = "andon.oturum";
 const ROL_ADLARI = { operator: "Operatör", bakim: "Bakım mühendisi" };
@@ -23,10 +24,23 @@ const $ = (id) => document.getElementById(id);
 const sayi = new Intl.NumberFormat("tr-TR");
 const para = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "USD", maximumFractionDigits: 4 });
 
-class OturumBitti extends Error {}
+class OturumBitti extends Error {
+  name = "OturumBitti";
+}
 
 let oturum = oturumuOku();
 let bekleniyor = false;
+let aktifEkran = "sohbet";
+
+const EKRANLAR = { sohbet: "sohbet-ekrani", oee: "oee-ekrani" };
+const oee = oeeEkrani({
+  api,
+  eleman,
+  asistanaSor(metin) {
+    ekranSec("sohbet");
+    sor(metin);
+  },
+});
 
 // --- Oturum -----------------------------------------------------------------
 
@@ -51,6 +65,7 @@ function oturumuYaz(yeni) {
 function cikisYap(mesaj) {
   oturumuYaz(null);
   $("mesajlar").replaceChildren();
+  aktifEkran = "sohbet";
   ekraniGoster();
   if (mesaj) girisHatasiGoster(mesaj);
 }
@@ -71,9 +86,10 @@ async function api(yol, secenekler = {}) {
 function ekraniGoster() {
   const girisli = Boolean(oturum);
   $("giris-ekrani").hidden = girisli;
-  $("sohbet-ekrani").hidden = !girisli;
   $("oturum").hidden = !girisli;
+  $("sekmeler").hidden = !girisli;
   if (!girisli) {
+    for (const id of Object.values(EKRANLAR)) $(id).hidden = true;
     $("giris-formu").elements.username.focus();
     return;
   }
@@ -88,7 +104,22 @@ function ekraniGoster() {
     }),
   );
   bosDurumuGuncelle();
-  $("soru").focus();
+  ekranSec(aktifEkran);
+}
+
+function ekranSec(ad) {
+  aktifEkran = ad;
+  for (const [ekran, id] of Object.entries(EKRANLAR)) $(id).hidden = ekran !== ad;
+  for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {
+    if (sekme.dataset.ekran === ad) sekme.setAttribute("aria-current", "page");
+    else sekme.removeAttribute("aria-current");
+  }
+  if (ad === "sohbet") $("soru").focus();
+  if (ad === "oee") oee.goster();
+}
+
+for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {
+  sekme.addEventListener("click", () => ekranSec(sekme.dataset.ekran));
 }
 
 function girisHatasiGoster(metin) {

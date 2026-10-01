@@ -16,6 +16,12 @@ aynı (25 arıza, 13 hidrolik).*
 Kaynağa tıklayınca kılavuzun PDF'i o sayfada açılır. Operatör yalnızca operasyon dokümanlarını,
 bakım mühendisi bütün kılavuzları görür.
 
+**OEE paneli** hatların vardiya verisinden OEE'yi (kullanılabilirlik × performans × kalite),
+günlük seyrini, duruş nedenlerinin Pareto'sunu ve hattı en uzun durduran makineleri gösterir.
+Renkler andon ışıklarıyla aynıdır: %85 ve üstü yeşil (dünya standardı), %65–85 sarı, altı
+kırmızı. "Asistana sor" düğmesi paneldeki hat ve tarih aralığıyla asistana "OEE neden bu
+seviyede?" diye sorar; asistan aynı sayıları `oee_hesapla` aracından alır.
+
 > Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
@@ -33,10 +39,10 @@ bakım mühendisi bütün kılavuzları görür.
 
 ```mermaid
 flowchart LR
-    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar"]
+    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar · /oee"]
     API --> AG["Agent döngüsü<br/>(en fazla 6 adım)"]
     AG <-->|"araç çağrıları"| LLM["Gemini / Ollama<br/>OpenAI uyumlu API"]
-    AG --> T1["ariza_say · stok_sorgula<br/>bakim_talebi_olustur"]
+    AG --> T1["ariza_say · oee_hesapla<br/>stok_sorgula · bakim_talebi_olustur"]
     AG --> T2["dokuman_ara"]
     T1 -->|"parametreli SQL"| PG[("PostgreSQL<br/>+ pgvector")]
     T2 -->|"rol filtreli<br/>vektör araması"| PG
@@ -70,16 +76,17 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (1573 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (1989 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Tasarım kararları
 
-**LLM'e serbest SQL yazdırılmıyor.** LLM yalnızca dört parametreli aracı çağırabilir:
+**LLM'e serbest SQL yazdırılmıyor.** LLM yalnızca beş parametreli aracı çağırabilir:
 
 | Araç | Ne yapar |
 |---|---|
 | `ariza_say(hat, baslangic, bitis, ariza_tipi)` | Arıza sayısı; tiplere ve makinelere göre dağılım |
+| `oee_hesapla(hat, baslangic, bitis)` | OEE ve bileşenleri (yüzde), vardiyalara göre OEE, en büyük duruş nedenleri, en çok durduran makineler |
 | `dokuman_ara(soru, k)` | Kılavuzlarda anlamsal arama; doküman kodu ve sayfa numarasıyla |
 | `stok_sorgula(parca_kodu, sadece_kritik)` | Yedek parça miktarı, yeri, kritik seviye |
 | `bakim_talebi_olustur(makine_kodu, aciklama, oncelik)` | Bakım talebi açar |
@@ -116,6 +123,36 @@ yoğunluk nedeniyle sık sık 503 döndürdü ve demo sorusu yeniden denemelerle
 `gemini-3.5-flash-lite` aynı araç seçimini LLM çağrısı başına ~0,7 saniyede ve yarı maliyetle
 yapıyor. Demo sorusu arayüzden, Docker'daki uygulamada **3,1 saniyede, $0,0022'ye** (3 adım,
 4.542 token) doğru cevaplandı. Model `.env`'deki `LLM_MODEL` ile değiştirilebilir.
+
+**OEE süre üzerinden tanımlanıyor.** Vardiya kaydında planlı süre, üretilen ve hurda adet
+tutulur; hattın ideal çevrim süresi `hatlar` tablosundadır.
+
+| Bileşen | Tanım |
+|---|---|
+| Kullanılabilirlik | çalışma süresi / planlı süre (çalışma = planlı − duruş) |
+| Performans | net süre / çalışma süresi (net = Σ adet × ideal çevrim) |
+| Kalite | değerli süre / net süre (değerli = Σ sağlam adet × ideal çevrim) |
+| OEE | değerli süre / planlı süre = kullanılabilirlik × performans × kalite |
+
+Tek bir hatta kalite, sağlam adet / toplam adet ile aynıdır. Hatlar birleştirilince fark ortaya
+çıkar: adetle hesaplansaydı 6 saniyelik bir pres parçası 55 saniyelik bir montaj parçasıyla aynı
+ağırlıkta sayılırdı ve fabrika OEE'si A × P × Q'ya eşit olmazdı. Birden çok vardiyanın OEE'si de
+vardiya OEE'lerinin ortalaması değil, toplam sürelerden hesaplanır; aksi hâlde planlı bakım
+yüzünden kısalmış bir vardiya, tam bir vardiyayla aynı ağırlığı alırdı.
+
+**Duruşun tek bir kaynağı var.** Vardiyanın duruşları `vardiya_duruslari` tablosundadır:
+arıza, ürün değişimi (kalıp, fikstür, renk, model) ve malzeme bekleme. Arıza duruşu, arıza
+kaydına bağlıdır; tipi ve makinesi oradan gelir, ayrıca tutulmaz. Vardiya kaydında "toplam
+duruş" diye ayrı bir alan da yoktur: duruş her sorguda bu tablodan toplanır. Böylece Pareto'daki
+dakikaların toplamı OEE'deki duruşla her zaman birebir aynıdır (testle de doğrulanır). Aynı anda
+iki arıza hattı durdurduysa çakışan dakikalar önce başlayan arızaya yazılır; planlı bakımla
+örtüşen dakikalar duruş sayılmaz. Gerçek bir MES'e (ör. Verimot) bağlanmak için vardiya özetini
+ve duruş kayıtlarını bu iki tabloya aktarmak yeterlidir.
+
+**LLM'e yüzdeler hazır veriliyor.** `oee_hesapla` oranları 0,7829 yerine 78,3 olarak döner;
+model çarpma ya da yuvarlama yapmaz, sayıyı olduğu gibi aktarır. Panelin "Asistana sor"
+düğmesi soruya tarih aralığını açıkça yazar: "son 30 gün"ü model takvim ayı olarak yorumlarsa
+panelle asistan farklı sayılar verirdi (denemede %63,8'e karşı %63,6).
 
 **Arıza kaydı makineye bağlı.** Arıza, iş emri ve bakım talebi hatta değil makineye bağlıdır; hatta
 `makineler.hat_id` üzerinden ulaşılır. İki alan birden tutulsaydı bir kaydın makinesi bir hatta,
@@ -213,7 +250,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 1573 test (~30 sn); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 1989 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -224,13 +261,15 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | Test dosyası | Test | Ne doğruluyor |
 |---|---|---|
 | `test_farkli_yoldan` | 611 | Her hat × ay × arıza tipi, her gün, her stok kodu ve makine için API ve araç sonucu, SQL kullanmadan Python'da hesaplanan sonuçla aynı |
+| `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
-| `test_guvenlik_matrisi` | 143 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_guvenlik_matrisi` | 161 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
 | `test_arac_girdileri` | 76 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
-| `test_api_dogrulama` | 49 | Geçersiz her istek 422, asla 500 değil |
+| `test_api_dogrulama` | 55 | Geçersiz her istek 422, asla 500 değil |
 | `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
+| `test_arayuz_oee` | 20 | OEE panelinin tarih aralıkları (ay ve yıl sınırı, artık yıl), yüzde biçimi ve andon rengi eşikleri (Node ile) |
 | `test_ozellikler` | 10 | Hypothesis ile her biri 300 rastgele girdi: parçalama, token, tarih filtresi, sayı eşleştirme |
 | diğerleri | 138 | API, agent döngüsü, giriş, RAG, seed, değerlendirme setinin tutarlılığı |
 
@@ -262,11 +301,13 @@ taranacağı: [`docs/claude-araclari.md`](docs/claude-araclari.md).
 
 | Tablo | İçerik |
 |---|---|
-| `hatlar`, `makineler` | 7 hat (Pres 1-3, Kaynak 1-2, Montaj 1, Boya 1), 21 makine |
+| `hatlar`, `makineler` | 7 hat (Pres 1-3, Kaynak 1-2, Montaj 1, Boya 1) ve ideal çevrim süreleri, 21 makine |
 | `ariza_kayitlari` | 6 aylık arıza: başlangıç/bitiş, tip, önem, hattı durdurup durdurmadığı |
 | `stok` | Yedek parçalar ve minimum seviyeleri |
 | `is_emirleri` | Arıza müdahaleleri ve periyodik bakımlar, kullanılan parça |
 | `bakim_talepleri` | Operatörlerin ve agent'ın açtığı talepler |
+| `vardiya_uretimi` | Her hattın her vardiyası: planlı süre, üretilen ve hurda adet (hafta içi üç, cumartesi iki, pazar bir vardiya) |
+| `vardiya_duruslari` | Vardiyadaki duruşlar: arıza (arıza kaydına bağlı), ürün değişimi, malzeme bekleme |
 | `kullanicilar` | Demo kullanıcılar (argon2 parola hash'i) |
 | `dokumanlar`, `dokuman_parcalari` | Kılavuzlar ve 384 boyutlu vektörleriyle parçaları |
 | `llm_istekleri` | Agent'ın her isteği: token, maliyet, süre, araçlar |
@@ -274,6 +315,14 @@ taranacağı: [`docs/claude-araclari.md`](docs/claude-araclari.md).
 Sahte veride bilerek desenler var: Pres 3 en çok arıza veren hat, P3-HP'de son iki ayda hidrolik
 arızalar artıyor, pazar günleri arıza az, beş parça minimum stok seviyesinin altında ve seed
 anında üç arıza sürüyor. Elle yazılmış referans sorgular: [`sql/sorular.sql`](sql/sorular.sql).
+
+Üretim verisinin desenleri: Pres 3'ün OEE'si en düşük (~%65; diğer hatlar %78–82), çünkü hem en
+çok duran hat hem de 2009 model olduğu için tasarım hızının altında çalışıyor. Pres hatlarında en
+büyük kayıp arıza değil kalıp değişimi; Pres 3'te bir kalıp değişimi diğer preslerin 1,5 katı
+sürüyor (hızlı kalıp değişimi, SMED, için açık bir fırsat). Pres 3'te son iki ayda hurda oranı
+üç katına çıkıyor; P3-HP'deki hidrolik arızaların arttığı dönemle aynı. Gece vardiyasında
+performans gündüzden düşük. Üretim verisi ayrı bir rastgele sayı üreteciyle üretilir; eklenmesi
+arıza, stok ve iş emri verisini değiştirmedi, demo sorusunun cevabı aynı kaldı.
 
 Kılavuzlar (toplam 20 sayfa) Markdown'da yazılıp `scripts/kilavuz_pdf.py` ile PDF'e çevrilir;
 uygulama yalnızca PDF'leri okur. Kılavuzlarda veritabanındaki makine ve stok kodları geçer, böylece
@@ -298,12 +347,12 @@ app/
   embedding.py   multilingual-e5-small
   auth.py        JWT, roller, parola hash'i
   sorgular.py    SQL sorguları
-  static/        sohbet arayüzü
+  static/        sohbet arayüzü ve OEE paneli
 scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           1573 test
+tests/           1989 test
 ```
 
 ## Bilinen eksikler

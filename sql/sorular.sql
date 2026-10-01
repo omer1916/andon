@@ -141,3 +141,43 @@ FROM is_emirleri
 WHERE durum IN ('acik', 'devam')
 GROUP BY atanan
 ORDER BY count(*) DESC, atanan;
+
+
+\echo '12. Geçen ay hatların OEE ve bileşenleri (en düşükten yükseğe)'
+-- Duruş, vardiya kaydında tutulmaz; vardiya_duruslari tablosundan toplanır.
+WITH v AS (
+    SELECT v.*, h.ad AS hat, h.ideal_cevrim_sn,
+           coalesce((SELECT sum(d.sure_dk) FROM vardiya_duruslari d WHERE d.vardiya_id = v.id), 0)
+               AS durus_dk
+    FROM vardiya_uretimi v
+    JOIN hatlar h ON h.id = v.hat_id
+    WHERE v.baslangic >= date_trunc('month', now()) - interval '1 month'
+      AND v.baslangic <  date_trunc('month', now())
+)
+SELECT hat,
+       round(100.0 * sum(planli_sure_dk - durus_dk) / sum(planli_sure_dk), 1)        AS kullanilabilirlik,
+       round(100.0 * sum(toplam_adet * ideal_cevrim_sn) / 60
+                   / sum(planli_sure_dk - durus_dk), 1)                               AS performans,
+       round(100.0 * sum(toplam_adet - hurda_adet) / sum(toplam_adet), 1)            AS kalite,
+       round(100.0 * sum((toplam_adet - hurda_adet) * ideal_cevrim_sn) / 60
+                   / sum(planli_sure_dk), 1)                                          AS oee
+FROM v
+GROUP BY hat
+ORDER BY oee;
+
+
+\echo '13. Pres 3 duruş nedenleri Pareto (geçen ay)'
+SELECT coalesce('arıza: ' || a.ariza_tipi, d.neden)                     AS neden,
+       sum(d.sure_dk)                                                   AS sure_dk,
+       round(100.0 * sum(d.sure_dk) / sum(sum(d.sure_dk)) OVER (), 1)   AS pay,
+       round(100.0 * sum(sum(d.sure_dk)) OVER (ORDER BY sum(d.sure_dk) DESC)
+                   / sum(sum(d.sure_dk)) OVER (), 1)                    AS kumulatif
+FROM vardiya_duruslari d
+JOIN vardiya_uretimi v ON v.id = d.vardiya_id
+JOIN hatlar h ON h.id = v.hat_id
+LEFT JOIN ariza_kayitlari a ON a.id = d.ariza_id
+WHERE h.ad = 'Pres 3'
+  AND v.baslangic >= date_trunc('month', now()) - interval '1 month'
+  AND v.baslangic <  date_trunc('month', now())
+GROUP BY 1
+ORDER BY sure_dk DESC;
