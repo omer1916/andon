@@ -1,0 +1,29 @@
+version: 2
+
+# Bağımlılık güncellemeleri ayda bir, ekosistem başına tek PR olarak gelir.
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
