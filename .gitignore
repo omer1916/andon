@@ -20,8 +20,15 @@ htmlcov/
 # Gizli ayarlar (.env.example commit'lenir, .env commit'lenmez)
 .env
 
+# Claude Code: ortak ayarlar ve skill'ler commit'lenir, kişisel ayarlar (settings.local.json) commit'lenmez
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+
+# Strix tarama çıktıları (çalışan saldırı örnekleri içerir)
+strix_runs/
+
 # Editör / işletim sistemi
-.claude/
 .idea/
 .vscode/
 .DS_Store

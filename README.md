@@ -254,6 +254,10 @@ Her iş kendi branch'inde geliştirildi ve pull request ile birleştirildi:
 [#6 güvenlik ve kalite](https://github.com/omer1916/andon/pull/6) ·
 [#7 arayüz](https://github.com/omer1916/andon/pull/7)
 
+Claude Code ile çalışırken kullanılan güvenlik ve tasarım araçları (Strix skill'leri, tasarım
+skill'leri, önerilen plugin'ler, CodeQL, Dependabot) ve Strix ile uygulamanın nasıl
+taranacağı: [`docs/claude-araclari.md`](docs/claude-araclari.md).
+
 ## Veri
 
 | Tablo | İçerik |
