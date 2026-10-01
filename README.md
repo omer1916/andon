@@ -90,7 +90,7 @@ http://localhost:8000/docs adresindedir.
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
 | Telegram | Bot API, httpx ile ince istemci, uzun yoklama (dışarıya açık adres gerekmez) |
-| Kalite | pytest (2548 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2551 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Telegram botu
@@ -104,7 +104,10 @@ http://localhost:8000/docs adresindedir.
 
 ### Kurulum
 
-Token'ı almak dışında her şey hazır. Token bir paroladır: kimseyle paylaşma, git'e koyma.
+Token'ı almak dışında her şey hazır. Token almadan önce bütün akış yerelde denenebilir:
+`python -m scripts.telegram_prova` botun gerçek kodunu, Telegram'ı taklit eden yerel bir
+sunucuya karşı çalıştırır (eşleştirme, soru, fotoğraflı talep, komutlar, arıza bildirimi) ve
+bota giden mesajları yazdırır. Gerçek Telegram'a istek gitmez. Token bir paroladır: kimseyle paylaşma, git'e koyma.
 
 1. Telegram'da **@BotFather**'ı aç, `/newbot` yaz. Bota bir ad (ör. *Andon Fabrika Asistanı*)
    ve sonu `bot` ile biten bir kullanıcı adı (ör. `andon_fabrika_bot`) ver. Verdiği token'ı
@@ -192,6 +195,21 @@ görüş değildir):
   yeniden çalışıp arıza numaraları küçülürse eski arızalar yeniden bildirilmez.
 - Eşleştirme tabloları seed'de silinmez (`sql/telegram.sql`, `IF NOT EXISTS`); kullanıcılar
   yeniden oluşturulsa da bağlantılar kalır.
+
+**Provanın yakaladıkları.** Sahte Telegram sunucusuyla, gerçek veritabanı, embedding modeli ve
+Gemini kullanılarak yapılan uçtan uca prova, birim testlerinin göremediği iki hata buldu:
+
+1. *Model yanlış yılı yazdı.* "Son 7 günde kaç arıza oldu?" sorusunda, sistem isteminde bugünün
+   tarihi (2026) olduğu hâlde Gemini `ariza_say`'ı 2025 tarihleriyle çağırdı ve "hiç arıza
+   yok" dedi. Artık sonuç sıfırsa ve aralık arıza kayıtlarının tamamen dışındaysa araç sıfır
+   yerine düzeltilebilir bir hata döner ("arıza kayıtları 2026-04-03 ile 2026-10-02 arasında,
+   özellikle yılı kontrol et"); model aralığı düzeltip yeniden sorar. Veri aralığı içinde
+   gerçekten arıza olmayan bir dönem için cevap yine "0" olur.
+2. *Tırnak kaçırma.* Telegram'a giden raporda "OEE&amp;#x27;si" göründü: `html.escape`
+   tırnakları da kaçırıyordu. Telegram HTML'i yalnızca `<`, `>`, `&` ister.
+
+Birim testleri ikisini de görmüyordu: sahte LLM tarihi her zaman doğru yazıyor, testler de
+mesajı kendi kaçırma kuralıyla karşılaştırıyordu. Her ikisi için de artık test var.
 
 ## Tasarım kararları
 
@@ -420,7 +438,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2548 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2551 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -434,12 +452,12 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
 | `test_guvenlik_matrisi` | 269 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
-| `test_telegram` | 44 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, rol (operatöre bakım kılavuzu yok), HTML kaçırma, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, engelleyen kullanıcı, komutlar, saklama süresi, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
+| `test_telegram` | 45 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, rol (operatöre bakım kılavuzu yok), HTML kaçırma, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, engelleyen kullanıcı, komutlar, saklama süresi, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
 | `test_bakim_plani` | 341 | Weibull MLE'nin bilinen parametreleri bulması ve SciPy ile aynı olması, sansürün etkisi, olabilirlik oranı testinin yanlış alarm oranı, sırt çantasının 300 örnekte kaba kuvvetle aynı olması, plan verisinin SQL'siz hesapla aynı olması, 7 kapasitede en iyi seçim, rol ve doğrulama |
 | `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
-| `test_arac_girdileri` | 76 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
+| `test_arac_girdileri` | 78 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
 | `test_api_dogrulama` | 63 | Geçersiz her istek 422, asla 500 değil |
 | `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
 | `test_arayuz_oee` | 20 | OEE panelinin tarih aralıkları (ay ve yıl sınırı, artık yıl), yüzde biçimi ve andon rengi eşikleri (Node ile) |
@@ -520,6 +538,9 @@ app/
   bakim_plani.py makine riskleri ve haftalık bakım planı
   telegram_bot.py  Telegram botu: eşleştirme, soru, fotoğraflı talep, bildirim, komutlar
   telegram_api.py  Telegram Bot API istemcisi (token'ı hatalara sızdırmaz)
+scripts/telegram_bot.py    botu çalıştırır (uzun yoklama)
+scripts/telegram_prova.py  token olmadan uçtan uca prova (sahte Telegram sunucusu)
+scripts/ariza_ekle.py      bildirim denemesi için hattı durduran bir arıza ekler
   tools.py       agent araçları ve JSON şemaları
   llm.py         Gemini/Ollama istemcisi, maliyet hesabı
   rag.py         PDF okuma, parçalama, vektör araması
@@ -531,7 +552,7 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2548 test
+tests/           2551 test
 ```
 
 ## Bilinen eksikler

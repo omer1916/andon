@@ -170,13 +170,20 @@ def bagli_mi(conn: psycopg.Connection, kullanici_adi: str) -> bool:
 # --- Biçim -------------------------------------------------------------------------------
 
 
+def _kacir(metin: str) -> str:
+    """Telegram HTML'i için yalnızca <, > ve & kaçırılır. Tırnaklar da kaçırılırsa (html.escape
+    varsayılanı) mesajda "OEE&#x27;si" görünebiliyor."""
+    return html.escape(metin, quote=False)
+
+
 def telegram_html(metin: str) -> str:
     """Agent'ın kısıtlı Markdown'ını Telegram HTML'ine çevirir. Önce bütün metin kaçırılır;
     modelin ya da kılavuzun ürettiği hiçbir etiket Telegram'a etiket olarak gitmez."""
     satirlar = []
-    for satir in html.escape(metin, quote=False).splitlines():
+    for satir in _kacir(metin).splitlines():
         satir = re.sub(r"^\s*#{1,6}\s+(.+)$", r"<b>\1</b>", satir)
-        satir = re.sub(r"^\s*[-*•]\s+", "• ", satir)
+        # Alt maddeler (girintili) girintili ve farklı işaretle kalsın.
+        satir = re.sub(r"^([ \t]*)[-*•]\s+", lambda m: "    ◦ " if m.group(1) else "• ", satir)
         satirlar.append(satir)
     metin = "\n".join(satirlar)
     metin = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", metin)
@@ -188,7 +195,7 @@ def cevap_metni(sonuc: agent.SohbetSonucu) -> str:
     metin = telegram_html(sonuc.cevap or "(boş cevap)")
     kaynaklar = dict.fromkeys(f"{p['dokuman_kodu']} s. {p['sayfa']}" for p in sonuc.kaynaklar)
     if kaynaklar:
-        metin += f"\n\n<i>Kaynaklar: {html.escape(', '.join(kaynaklar))}</i>"
+        metin += f"\n\n<i>Kaynaklar: {_kacir(', '.join(kaynaklar))}</i>"
     return metin
 
 
@@ -217,20 +224,20 @@ def rapor_ozeti(r: dict) -> str:
         f"{_yuzde(f['kullanilabilirlik'])}, performans {_yuzde(f['performans'])}, kalite "
         f"{_yuzde(f['kalite'])})",
         "",
-        html.escape(r["yorum"]["ozet"]),
+        _kacir(r["yorum"]["ozet"]),
     ]
     for baslik, maddeler in (
         ("Dikkat", r["yorum"]["dikkat"]),
         ("Öneriler", r["yorum"]["oneriler"]),
     ):
         if maddeler:
-            satirlar += ["", f"<b>{baslik}</b>", *(f"• {html.escape(m)}" for m in maddeler)]
+            satirlar += ["", f"<b>{baslik}</b>", *(f"• {_kacir(m)}" for m in maddeler)]
     satirlar += ["", "<b>En düşük hatlar</b>"]
     for h in r["hatlar"][:3]:
         yedi = (
             f" (son 7 gün {_yuzde(h['son_7_gun_oee'])})" if h["son_7_gun_oee"] is not None else ""
         )
-        satirlar.append(f"{_isik(h['oee'])} {html.escape(h['hat'])}: {_yuzde(h['oee'])}{yedi}")
+        satirlar.append(f"{_isik(h['oee'])} {_kacir(h['hat'])}: {_yuzde(h['oee'])}{yedi}")
     satirlar += [
         "",
         f"Vardiyada başlayan arıza: {len(r['arizalar'])} · açık bakım talebi: "
@@ -336,7 +343,7 @@ class Bot:
         yanlislar.clear()
         self._gonder(
             chat_id,
-            f"Bağlandı: <b>{html.escape(kullanici.ad_soyad)}</b> "
+            f"Bağlandı: <b>{_kacir(kullanici.ad_soyad)}</b> "
             f"({ROL_ADLARI[kullanici.rol]}).\n\n<i>Bu sohbet uçtan uca şifreli değildir. Neyin "
             "saklandığını /gizlilik ile görebilir, bağlantıyı /cikis ile silebilirsiniz.</i>"
             f"\n\n{yardim_metni(kullanici)}",
@@ -448,13 +455,11 @@ class Bot:
             ad = sorgular.hat_adini_bul(self.conn, hat)
             if ad is None:
                 gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(self.conn))
-                return self._gonder(
-                    chat_id, html.escape(f"'{hat}' adında hat yok. Hatlar: {gecerli}")
-                )
+                return self._gonder(chat_id, _kacir(f"'{hat}' adında hat yok. Hatlar: {gecerli}"))
             (t,) = sorgular.oee_hesapla(self.conn, hat=ad, **aralik)
             pareto = sorgular.durus_pareto(self.conn, hat=ad, **aralik)
             satirlar = [
-                f"<b>{html.escape(ad)}, son 7 gün</b>",
+                f"<b>{_kacir(ad)}, son 7 gün</b>",
                 f"{_isik(t['oee'])} OEE {_yuzde(t['oee'])}",
                 f"Kullanılabilirlik {_yuzde(t['kullanilabilirlik'])} · performans "
                 f"{_yuzde(t['performans'])} · kalite {_yuzde(t['kalite'])}",
@@ -467,7 +472,7 @@ class Bot:
         hatlar = sorgular.oee_hesapla(self.conn, grup="hat", **aralik)
         hatlar.sort(key=lambda h: h["oee"] or 0)
         satirlar = ["<b>Son 7 günde hatların OEE'si</b>"] + [
-            f"{_isik(h['oee'])} {html.escape(h['hat'])}: {_yuzde(h['oee'])}" for h in hatlar
+            f"{_isik(h['oee'])} {_kacir(h['hat'])}: {_yuzde(h['oee'])}" for h in hatlar
         ]
         self._gonder(chat_id, "\n".join(satirlar))
 
@@ -480,7 +485,7 @@ class Bot:
         for r in (r for r in plan["makineler"] if r["secildi"]):
             not_ = " · şu an arızalı, tamirden sonra" if r["su_an_arizali"] else ""
             satirlar.append(
-                f"• <b>{r['makine_kodu']}</b> {html.escape(r['makine_adi'])} ({r['hat']}): "
+                f"• <b>{r['makine_kodu']}</b> {_kacir(r['makine_adi'])} ({r['hat']}): "
                 f"{r['bakim_saat']} sa, arıza olasılığı %{r['ariza_olasiligi'] * 100:.0f}, "
                 f"önlenmesi beklenen ~{r['kazanc_dk']:.0f} dk{not_}"
             )
@@ -537,9 +542,9 @@ class Bot:
     def _ariza_mesaji(self, ariza: tuple, ayrintili: bool) -> str:
         _, baslangic, tip, onem, aciklama, kod, makine_adi, hat = ariza
         metin = (
-            f"🔴 <b>{html.escape(hat)} durdu</b> ({baslangic.astimezone(TZ):%H:%M})\n"
-            f"{kod} {html.escape(makine_adi)}: {tip} arıza, {ONEM_ADLARI[onem]} önem\n"
-            f"<i>{html.escape(aciklama)}</i>"
+            f"🔴 <b>{_kacir(hat)} durdu</b> ({baslangic.astimezone(TZ):%H:%M})\n"
+            f"{kod} {_kacir(makine_adi)}: {tip} arıza, {ONEM_ADLARI[onem]} önem\n"
+            f"<i>{_kacir(aciklama)}</i>"
         )
         if not ayrintili:
             return metin + "\n\nBakım ekibine bildirildi. Ayrıntılar web arayüzünde."
@@ -557,12 +562,12 @@ class Bot:
             p = parcalar[0]
             metin += (
                 f"\n\n📖 <b>Kılavuz ({p['dokuman_kodu']}, s. {p['sayfa']})</b>\n"
-                f"{html.escape(_kisalt(p['icerik'], 300))}"
+                f"{_kacir(_kisalt(p['icerik'], 300))}"
             )
         stok = [s for s in sorgular.stok_getir(self.conn) if s["kategori"] == tip][:4]
         if stok:
             metin += "\n\n📦 <b>İlgili yedek parçalar</b>\n" + "\n".join(
-                f"• {s['parca_kodu']} {html.escape(s['ad'])}: {s['miktar']} {s['birim']}"
+                f"• {s['parca_kodu']} {_kacir(s['ad'])}: {s['miktar']} {s['birim']}"
                 + (" ⚠️ minimumun altında" if s["kritik"] else "")
                 for s in stok
             )

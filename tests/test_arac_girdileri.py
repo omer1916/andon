@@ -32,6 +32,8 @@ GECERSIZ = [
     ("ariza_say", {**TARIH, "hat": ""}, "Geçerli hatlar"),
     ("ariza_say", {**TARIH, "hat": "Pres 3' OR '1'='1"}, "Geçerli hatlar"),
     ("ariza_say", {**TARIH, "hat": "Pres 3\x00"}, "geçersiz karakter"),
+    ("ariza_say", {"baslangic": "2025-09-25", "bitis": "2025-10-02"}, "özellikle yılı"),
+    ("ariza_say", {"baslangic": "2027-01-01", "bitis": "2027-01-31"}, "arıza kayıtları 2026-"),
     ("dokuman_ara", {}, "soru: Field required"),
     ("dokuman_ara", {"soru": "ab"}, "soru"),
     ("dokuman_ara", {"soru": None}, "soru"),

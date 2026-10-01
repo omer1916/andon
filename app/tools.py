@@ -101,6 +101,16 @@ def _hat_dogrula(b: AracBaglami, hat: str | None) -> None:
 def _ariza_say(b: AracBaglami, g: ArizaSayGirdisi) -> dict:
     _hat_dogrula(b, g.hat)
     ozet = sorgular.ariza_ozeti(b.conn, **g.model_dump())
+    if ozet["toplam"] == 0:
+        # Model bazen bugünün tarihi verilse bile yanlış yılı yazıyor (Telegram provasında
+        # 2026 yerine 2025) ve "hiç arıza yok" diye cevaplıyordu. Aralık verinin tamamen
+        # dışındaysa sıfır yerine düzeltilebilir bir hata dönülür.
+        aralik = sorgular.ariza_araligi(b.conn)
+        if aralik and (g.bitis < aralik[0] or g.baslangic > aralik[1]):
+            raise AracHatasi(
+                f"Bu aralıkta kayıt yok: arıza kayıtları {aralik[0]} ile {aralik[1]} arasında. "
+                "Tarih aralığını, özellikle yılı, kontrol et."
+            )
     return {**g.model_dump(mode="json"), **ozet}
 
 

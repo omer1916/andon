@@ -454,6 +454,7 @@ def test_komutlar(ortam):
     rapor = ortam.api.son(BAKIM_SOHBETI)
     assert rapor.startswith("<b>Vardiya raporu: 29.09.2026, 3. vardiya</b>")
     assert "Yorum kurallarla" in rapor
+    assert "OEE'si" in rapor and "&#x27;" not in rapor  # tırnak kaçırılmaz
 
     bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, "/sil_herseyi"))
     assert "tanımıyorum" in ortam.api.son(BAKIM_SOHBETI)
@@ -467,6 +468,7 @@ def test_komutlar(ortam):
     [
         ("**kalın** ve `kod`", "<b>kalın</b> ve <code>kod</code>"),
         ("- bir\n* iki", "• bir\n• iki"),
+        ("- ana\n  - alt\n\t* alt 2", "• ana\n    ◦ alt\n    ◦ alt 2"),
         ("### Başlık", "<b>Başlık</b>"),
         ("*(Not: tamirden sonra)*", "<i>(Not: tamirden sonra)</i>"),
         ("2 * 3 = 6", "2 * 3 = 6"),

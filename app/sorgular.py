@@ -258,6 +258,16 @@ def oee_hesapla(
     return sonuc
 
 
+def ariza_araligi(conn: psycopg.Connection) -> tuple[date, date] | None:
+    """Arıza kayıtlarının ilk ve son günü (Türkiye saati); kayıt yoksa None."""
+    ilk, son = conn.execute(
+        "SELECT min(timezone(%(tz)s, baslangic))::date, max(timezone(%(tz)s, baslangic))::date "
+        "FROM ariza_kayitlari",
+        {"tz": TZ.key},
+    ).fetchone()
+    return None if ilk is None else (ilk, son)
+
+
 def uretim_araligi(conn: psycopg.Connection) -> tuple[date, date] | None:
     """Vardiya kayıtlarının ilk ve son günü (Türkiye saati); kayıt yoksa None."""
     ilk, son = conn.execute(
