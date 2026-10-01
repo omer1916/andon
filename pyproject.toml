@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "faker>=30",  # seed; Docker demo'su ilk açılışta sahte veri üretir
     "fastapi>=0.115",
+    "httpx>=0.27",  # Telegram Bot API istemcisi
     "openai>=1.60",  # Gemini ve Ollama'nın OpenAI uyumlu API'si için
     "psycopg[binary]>=3.2",
     "psycopg-pool>=3.2",

@@ -31,6 +31,10 @@ veritabanından gelir; asistanın yazdığı yorumdaki her sayı bu verilerle ka
 90 günün arızalarından tahmin eder ve ekibin sınırlı saatini, beklenen hat duruşunu en çok
 azaltacak makinelere dağıtır. Şu an arızalı olan makine de "tamirden sonra" notuyla plana girer.
 
+**Telegram botu** (isteğe bağlı) hat durduğunda bakım ekibine kılavuzdaki ilk adım ve yedek
+parça durumuyla anında bildirim gönderir; sahadan soru sormayı ve fotoğrafla bakım talebi
+açmayı sağlar. Ayrıntılar ve veri gizliliği: [Telegram botu](#telegram-botu).
+
 > Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
@@ -85,8 +89,109 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (2432 test), Hypothesis, ruff, GitHub Actions |
+| Telegram | Bot API, httpx ile ince istemci, uzun yoklama (dışarıya açık adres gerekmez) |
+| Kalite | pytest (2548 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
+
+## Telegram botu
+
+| Ne yapar | Nasıl |
+|---|---|
+| Arıza bildirimi | Hattı durduran yeni bir arıza en geç ~10 saniyede eşleşmiş herkese bildirilir. Bakım rolüne kılavuzdan ilk adım (sayfa numarasıyla) ve ilgili yedek parçaların stoğu gider; operatöre yalnızca hattın durduğu. |
+| Sahadan soru | Yazılan her mesaj web arayüzündeki agent'a, kullanıcının kendi rolüyle gider. |
+| Fotoğraflı talep | Fotoğraf + açıklama ("P3-HP'de yağ kaçağı var") ile bakım talebi açılır, fotoğraf talebe eklenir; bakım mühendisi vardiya raporunda görür. |
+| Komutlar | `/rapor` son vardiya raporu, `/oee [hat]` son 7 gün, `/plan [saat]` bakım planı (yalnızca bakım), `/gizlilik`, `/cikis`, `/yardim` |
+
+### Kurulum
+
+Token'ı almak dışında her şey hazır. Token bir paroladır: kimseyle paylaşma, git'e koyma.
+
+1. Telegram'da **@BotFather**'ı aç, `/newbot` yaz. Bota bir ad (ör. *Andon Fabrika Asistanı*)
+   ve sonu `bot` ile biten bir kullanıcı adı (ör. `andon_fabrika_bot`) ver. Verdiği token'ı
+   kopyala.
+2. Aynı sohbette güvenlik için:
+   - `/setjoingroups` → botu seç → **Disable** (bot gruplara eklenemesin; bot zaten grupları yok
+     sayar ama baştan kapatmak daha iyi).
+   - `/setcommands` → botu seç → aşağıdaki listeyi yapıştır:
+     ```
+     rapor - Son vardiyanın raporu
+     oee - Son 7 günün OEE'si (örn. /oee Pres 3)
+     plan - Haftalık bakım planı (bakım rolü)
+     gizlilik - Neyin saklandığı ve nereye gittiği
+     yardim - Komutlar
+     cikis - Bu sohbetin bağlantısını kaldırır
+     ```
+3. `.env` dosyasına ekle:
+   ```
+   TELEGRAM_BOT_TOKEN=<BotFather'ın verdiği token>
+   TELEGRAM_BOT_KULLANICI_ADI=andon_fabrika_bot
+   ```
+4. Botu başlat:
+   ```bash
+   docker compose --profile telegram up -d --build    # ya da: python scripts/telegram_bot.py
+   ```
+5. Web arayüzünde sağ üstteki **Telegram** düğmesi → **Kod al** → "Telegram'da aç" (ya da botta
+   `/baglan 123456`). Her kullanıcı kendi hesabını bağlar.
+6. Bildirimi denemek için hattı durduran bir arıza ekle:
+   ```bash
+   python scripts/ariza_ekle.py            # P3-HP, hidrolik, yüksek önem
+   ```
+
+### Veri gizliliği
+
+Teknik önlemler (hepsi testlerle doğrulanır, `tests/test_telegram.py`):
+
+- **Eşleştirme:** Web arayüzünde giriş yapmış kullanıcı 10 dakika geçerli, tek kullanımlık 6
+  haneli bir kod alır. Veritabanında kodun kendisi değil SHA-256 özeti tutulur. Yanlış kod
+  denemesi sohbet başına 10 dakikada 5 ile sınırlı; iki kullanıcıya aynı kod düşerse ikincisi
+  yeniden üretilir (üzerine yazılsaydı bir sohbet başkasının hesabına bağlanabilirdi).
+- **Eşleşmemiş sohbet:** Tanıtım mesajından başka hiçbir şey almaz; soru, komut ve fotoğraf
+  işlenmez, LLM'e gitmez.
+- **Yalnızca özel sohbet:** Grup ve kanal mesajları yok sayılır.
+- **Rol:** Agent kullanıcının rolüyle çalışır; operatör Telegram'dan da bakım kılavuzlarına
+  ulaşamaz. Arıza bildiriminde kılavuz alıntısı ve stok yalnızca bakım rolüne gider.
+- **Bildirim ayrıntısı:** Bot mesajları uçtan uca şifreli değildir, Telegram sunucularından
+  geçer. `TELEGRAM_BILDIRIM_AYRINTISI=kisa` ile bildirimler yalnızca "hat durdu"ya iner.
+- **Fotoğraf:** Yalnızca Telegram'ın sıkıştırdığı fotoğraflar kabul edilir (dosya olarak
+  gönderilen resim değil); Telegram bu sırada konum gibi EXIF bilgilerini siler. En fazla 5 MB.
+  Fotoğraflar `TELEGRAM_FOTOGRAF_SAKLAMA_GUN` (varsayılan 90) gün sonra otomatik silinir; web'de
+  yalnızca bakım rolü görür ve tarayıcıya önbelleğe alma yasağıyla (`Cache-Control: no-store`)
+  gönderilir.
+- **Bilgilendirme ve silme:** Bağlanırken kısa bir uyarı gösterilir; `/gizlilik` neyin
+  saklandığını, nereye gittiğini ve nasıl silineceğini anlatır. `/cikis` ya da web arayüzündeki
+  "Bağlantıyı kaldır" bağlantıyı ve bekleyen kodları hemen siler. Telefon numarası, Telegram
+  adı ve profili hiç saklanmaz; yalnızca sohbet numarası ve eşleştirme zamanı.
+- **Sınırlar:** Sohbet başına dakikada 10 soru (LLM maliyeti ve kötüye kullanım).
+- **Günlük:** Botun günlüğüne mesaj içeriği yazılmaz: işlenemeyen bir mesajda yalnızca hata
+  türü ve kodun dosya:satır konumu yazılır (bir test, hata mesajındaki içeriğin günlüğe
+  sızmadığını doğrular; ilk sürümde sızıyordu). Token adreste geçtiği için ağ hataları
+  token'sız bir mesajla yeniden fırlatılır.
+
+Şirketin ayrıca karar vermesi gerekenler (teknik değil, hukuki ve kurumsal; bu liste hukuki
+görüş değildir):
+
+- **Aydınlatma metni:** `/gizlilik` metni KVKK aydınlatma yükümlülüğünün kısa bir karşılığıdır;
+  son hâli şirketin hukuk birimiyle yazılmalı.
+- **Yurt dışına aktarım:** Telegram'ın ve Gemini'nin sunucuları yurt dışında. Mesajlarda
+  kişisel veri (ör. bir operatörün adı) geçebileceği için bu aktarımın hukuken değerlendirilmesi
+  gerekir.
+- **LLM sağlayıcısı:** Gemini API'nin ücretsiz katmanında Google gönderilen içeriği ürünlerini
+  geliştirmek için kullanabilir (güncel koşulları kontrol edin). Gerçek fabrika verisiyle
+  ücretli katman ya da fabrikanın kendi sunucusunda Ollama (`LLM_SAGLAYICI=ollama`)
+  kullanılmalı.
+- **Kayıp telefon:** Kullanıcı web arayüzünden "Bağlantıyı kaldır" ile telefonun erişimini
+  hemen kesebilir; bunun personele anlatılması gerekir.
+
+### Tasarım
+
+- Bot API'den ayrı bir süreçtir; aynı veritabanını ve aynı modülleri (agent, rapor, bakım
+  planı) kullanır. Docker'da `telegram` profiliyle, API'nin sağlıklı olmasını bekleyerek açılır.
+- Uzun yoklama: Telegram'dan en fazla 10 saniye yeni mesaj beklenir, sonra yeni arızalara
+  bakılır. Webhook gerekmez, uygulama dışarıya açılmaz.
+- Bildirilen son arıza bellekte tutulur. Bot kapalıyken başlayan arızalar bildirilmez; seed
+  yeniden çalışıp arıza numaraları küçülürse eski arızalar yeniden bildirilmez.
+- Eşleştirme tabloları seed'de silinmez (`sql/telegram.sql`, `IF NOT EXISTS`); kullanıcılar
+  yeniden oluşturulsa da bağlantılar kalır.
 
 ## Tasarım kararları
 
@@ -315,7 +420,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2432 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2548 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -328,7 +433,8 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_farkli_yoldan` | 611 | Her hat × ay × arıza tipi, her gün, her stok kodu ve makine için API ve araç sonucu, SQL kullanmadan Python'da hesaplanan sonuçla aynı |
 | `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
-| `test_guvenlik_matrisi` | 197 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_guvenlik_matrisi` | 269 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_telegram` | 44 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, rol (operatöre bakım kılavuzu yok), HTML kaçırma, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, engelleyen kullanıcı, komutlar, saklama süresi, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
 | `test_bakim_plani` | 341 | Weibull MLE'nin bilinen parametreleri bulması ve SciPy ile aynı olması, sansürün etkisi, olabilirlik oranı testinin yanlış alarm oranı, sırt çantasının 300 örnekte kaba kuvvetle aynı olması, plan verisinin SQL'siz hesapla aynı olması, 7 kapasitede en iyi seçim, rol ve doğrulama |
 | `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
@@ -412,6 +518,8 @@ app/
   guvenilirlik.py  sansürlü Weibull MLE, üstel model, olabilirlik oranı testi
   planlama.py    sırt çantası: dinamik programlama ve açgözlü karşılaştırma
   bakim_plani.py makine riskleri ve haftalık bakım planı
+  telegram_bot.py  Telegram botu: eşleştirme, soru, fotoğraflı talep, bildirim, komutlar
+  telegram_api.py  Telegram Bot API istemcisi (token'ı hatalara sızdırmaz)
   tools.py       agent araçları ve JSON şemaları
   llm.py         Gemini/Ollama istemcisi, maliyet hesabı
   rag.py         PDF okuma, parçalama, vektör araması
@@ -423,10 +531,16 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2432 test
+tests/           2548 test
 ```
 
 ## Bilinen eksikler
+
+- **Telegram botu tek iş parçacığında çalışıyor.** LLM bir soruyu cevaplarken (2-4 sn) diğer
+  mesajlar sırada bekler; birkaç kişilik bir ekip için yeterli, büyük bir fabrika için iş kuyruğu
+  gerekir. Vardiya raporu henüz otomatik gönderilmiyor (`/rapor` ile isteniyor) ve kanal olarak
+  yalnızca Telegram var; Türkiye'deki sahada WhatsApp daha yaygın. Bot mantığı Telegram'a özgü
+  kısımdan (`telegram_api.py`) ayrı olduğu için başka bir kanal eklemek mümkün.
 
 - **Bakım planının varsayımları.** Önlenebilirlik payları (hidrolik %70, yazılım %10 ...)
   varsayımdır; sahadaki bakım kayıtlarıyla ölçülmeli. Süreler takvim saatiyle hesaplanıyor,

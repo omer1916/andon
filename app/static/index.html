@@ -25,6 +25,7 @@
     </nav>
     <div class="oturum" id="oturum" hidden>
       <span class="kim"><span id="ad-soyad"></span> <span class="rol" id="rol"></span></span>
+      <button type="button" class="metin-dugme" id="telegram-dugmesi">Telegram</button>
       <button type="button" class="metin-dugme" id="cikis">Çıkış</button>
     </div>
   </header>
@@ -236,6 +237,49 @@
       </div>
     </section>
   </main>
+
+  <dialog id="telegram-penceresi" class="telegram-penceresi" aria-labelledby="telegram-baslik">
+    <div class="pencere-ust">
+      <h2 id="telegram-baslik">Telegram botu</h2>
+      <form method="dialog"><button class="metin-dugme">Kapat</button></form>
+    </div>
+    <p id="telegram-durum" class="soluk" role="status"></p>
+    <p>Telegram'dan soru sorabilir, fotoğraflı bakım talebi açabilir, hat durduğunda anında
+      bildirim alabilirsiniz.</p>
+    <ol class="adimlar">
+      <li>Aşağıdan bir eşleştirme kodu alın.</li>
+      <li>Telegram'da <strong id="telegram-bot-adi">fabrikanızın Andon botunu</strong> açın ve
+        kodu gönderin.</li>
+    </ol>
+    <div id="telegram-kod-alani" class="kod-alani" hidden>
+      <strong id="telegram-kod" class="telegram-kod"></strong>
+      <span>Botta şunu yazın: <code id="telegram-komut"></code></span>
+      <span class="soluk" id="telegram-sure"></span>
+      <a id="telegram-ac" class="ana-dugme" target="_blank" rel="noopener" hidden>Telegram'da aç</a>
+    </div>
+    <p class="hata-metni" id="telegram-hata" role="alert" hidden></p>
+    <div class="pencere-dugmeleri">
+      <button type="button" class="ana-dugme" id="telegram-kod-al">Kod al</button>
+      <button type="button" class="metin-dugme tehlike" id="telegram-kaldir" hidden>Bağlantıyı kaldır</button>
+    </div>
+    <details class="gizlilik">
+      <summary>Veri gizliliği</summary>
+      <ul>
+        <li>Yalnızca Telegram sohbet numaranız ve eşleştirme zamanı saklanır; telefon
+          numaranız ve profiliniz saklanmaz.</li>
+        <li>Bot mesajları <strong>uçtan uca şifreli değildir</strong>, Telegram sunucularından
+          geçer. Kişisel ya da gizli bilgi yazmayın.</li>
+        <li>Sorularınız web arayüzündeki gibi dil modeline gönderilir ve istek kaydında
+          kullanıcı adınızla tutulur.</li>
+        <li id="telegram-gizlilik-bildirim"></li>
+        <li id="telegram-gizlilik-saklama"></li>
+        <li>Bot yalnızca özel sohbetlerde çalışır, gruplara cevap vermez. Operatör hesabıyla
+          bakım kılavuzlarına Telegram'dan da erişilemez.</li>
+        <li>Bağlantıyı buradan ya da botta <code>/cikis</code> yazarak hemen silebilirsiniz.
+          Eşleştirme kodu veritabanında düz metin olarak değil, özeti olarak tutulur.</li>
+      </ul>
+    </details>
+  </dialog>
 
   <dialog id="pdf-gorunumu" class="pdf-gorunumu" aria-labelledby="pdf-baslik">
     <div class="pdf-ust">

@@ -43,6 +43,7 @@ DEMO_KULLANICILAR = [
 ]
 
 SEMA_DOSYASI = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+TELEGRAM_SEMASI = SEMA_DOSYASI.with_name("telegram.sql")  # eşleştirmeler seed'den sonra da kalır
 GUN_SAYISI = 183  # yaklaşık 6 ay
 
 # (ad, tip, arıza çarpanı): çarpan 1'den büyükse hat ortalamadan sık arıza verir.
@@ -580,6 +581,7 @@ def veritabanina_yaz(conn: psycopg.Connection, veri: dict[str, list[Kayit]]) -> 
     """Şemayı sıfırdan kurar ve veriyi tek transaction içinde yazar."""
     with conn.transaction(), conn.cursor() as cur:
         cur.execute(SEMA_DOSYASI.read_text(encoding="utf-8"))
+        cur.execute(TELEGRAM_SEMASI.read_text(encoding="utf-8"))
         for tablo in TABLOLAR:
             kayitlar = veri[tablo]
             kolonlar = list(kayitlar[0])

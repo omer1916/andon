@@ -397,7 +397,9 @@ def acik_talepler(conn: psycopg.Connection, limit: int = 5) -> tuple[int, list[d
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT t.id, m.kod AS makine_kodu, h.ad AS hat, t.oncelik, t.aciklama, t.olusturma
+            SELECT t.id, m.kod AS makine_kodu, h.ad AS hat, t.oncelik, t.aciklama, t.olusturma,
+                   EXISTS (SELECT 1 FROM talep_fotograflari f WHERE f.talep_id = t.id)
+                       AS fotograf_var
             FROM bakim_talepleri t
             JOIN makineler m ON m.id = t.makine_id
             JOIN hatlar h    ON h.id = m.hat_id
