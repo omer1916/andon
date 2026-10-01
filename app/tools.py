@@ -11,14 +11,15 @@ LLM'e serbest SQL yazdırılmaz; yalnızca buradaki parametreli fonksiyonları �
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from app import rag, sorgular
+from app import bakim_plani, rag, sorgular
 from app.auth import Kullanici
+from app.db import TZ
 from app.embedding import Embedder
 from app.models import ArizaTipi, Onem
 
@@ -84,6 +85,11 @@ class OeeGirdisi(BaseModel):
         if self.baslangic > self.bitis:
             raise ValueError("baslangic, bitis'ten sonra olamaz")
         return self
+
+
+class BakimPlaniGirdisi(BaseModel):
+    kapasite_saat: int = Field(16, ge=1, le=200, description="Bakım ekibinin ayırabileceği saat")
+    ufuk_gun: int = Field(7, ge=1, le=30, description="Kaç günlük arıza riskine göre planlansın")
 
 
 def _hat_dogrula(b: AracBaglami, hat: str | None) -> None:
@@ -162,6 +168,47 @@ def _dokuman_ara(b: AracBaglami, g: DokumanAraGirdisi) -> list[dict]:
     ]
 
 
+def _model_metni(r: dict) -> str:
+    if r["model"] == "weibull":
+        beta = f"{r['beta']:.2f}".replace(".", ",")
+        return f"Weibull, β {beta} ({r['beta_yorumu']}), {r['aralik_sayisi']} arıza aralığı"
+    if r["model"] == "ustel":
+        return f"sabit risk (üstel), {r['aralik_sayisi']} arıza aralığı"
+    return "çok az veri"
+
+
+def _plan_satiri(r: dict) -> dict:
+    satir = {
+        "makine": r["makine_kodu"],
+        "makine_adi": r["makine_adi"],
+        "hat": r["hat"],
+        "bakim_saat": r["bakim_saat"],
+        "ariza_olasiligi_yuzde": yuzde(r["ariza_olasiligi"]),
+        "onlenmesi_beklenen_durus_dk": round(r["kazanc_dk"]),
+        "model": _model_metni(r),
+    }
+    if r["su_an_arizali"]:
+        satir["not"] = "şu an arızalı; bakım tamirden sonra"
+    return satir
+
+
+def _bakim_plani_oner(b: AracBaglami, g: BakimPlaniGirdisi) -> dict:
+    if b.kullanici.rol != "bakim":
+        raise AracHatasi("Bakım planı yalnızca bakım mühendislerine açık.")
+    plan = bakim_plani.bakim_plani(b.conn, datetime.now(TZ), **g.model_dump())
+    secilen = [r for r in plan["makineler"] if r["secildi"]]
+    disarida = [r for r in plan["makineler"] if not r["secildi"] and r["kazanc_dk"] > 0]
+    return {
+        **g.model_dump(),
+        "secilen_saat": plan["secilen_saat"],
+        "onlenmesi_beklenen_durus_dk": round(plan["onlenen_durus_dk"]),
+        "plan": [_plan_satiri(r) for r in secilen],
+        "kapasite_yetmeyen_en_riskliler": [_plan_satiri(r) for r in disarida[:3]],
+        "aciklama": f"Olasılıklar son {plan['analiz_gun']} günün arızalarından tahmin edildi; "
+        "bakımın önleyebileceği arıza payları varsayımdır.",
+    }
+
+
 def _stok_sorgula(b: AracBaglami, g: StokSorgulaGirdisi) -> list[dict]:
     parcalar = sorgular.stok_getir(b.conn, **g.model_dump())
     if g.parca_kodu and not parcalar:
@@ -220,6 +267,14 @@ ARACLAR = {
             "malzeme bekleme) ve hattı en uzun durduran makineleri de döner.",
             OeeGirdisi,
             _oee_hesapla,
+        ),
+        Arac(
+            "bakim_plani_oner",
+            "Haftalık bakım planı önerir: makinelerin arıza riskine ve arızalarının hattı ne "
+            "kadar durdurduğuna göre, ekibin saatini beklenen duruşu en çok azaltacak "
+            "makinelere dağıtır. Yalnızca bakım rolü.",
+            BakimPlaniGirdisi,
+            _bakim_plani_oner,
         ),
         Arac(
             "stok_sorgula",

@@ -238,6 +238,49 @@ class VardiyaRaporu(BaseModel):
     markdown: str = Field(description="Kopyalanıp paylaşılabilecek düz metin rapor")
 
 
+class BakimPlaniFiltresi(BaseModel):
+    """`GET /bakim-plani` sorgu parametreleri."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kapasite_saat: int = Field(16, ge=1, le=200, description="Ekibin ayırabileceği bakım saati")
+    ufuk_gun: int = Field(7, ge=1, le=30, description="Arıza olasılığının hesaplandığı süre")
+
+
+class MakineRiski(BaseModel):
+    makine_kodu: str
+    makine_adi: str
+    hat: str
+    ariza_sayisi: int = Field(description="Analiz penceresindeki arıza sayısı")
+    aralik_sayisi: int = Field(description="Modelin dayandığı tamamlanmış arıza aralığı sayısı")
+    su_an_arizali: bool = Field(description="Arızası sürüyor; olasılık tamirden sonrası için")
+    model: Literal["weibull", "ustel", "az_veri", "ariza_yok"]
+    beta: float | None = Field(description="Weibull şekil tahmini; en az 10 aralıkta hesaplanır")
+    beta_yorumu: str | None
+    olabilirlik_orani: float | None = Field(description="2(ℓ_Weibull - ℓ_üstel); > 3,84: Weibull")
+    mtbf_saat: float | None = Field(description="Ortalama arızalar arası süre")
+    son_arizadan_beri_saat: float | None
+    ariza_olasiligi: float = Field(description="Ufuk içinde en az bir arıza olasılığı, 0-1")
+    ariza_basina_durus_dk: float = Field(description="Geçmişte arıza başına hat duruşu")
+    onlenebilirlik: float = Field(description="Bakımın önleyebileceği arıza payı (varsayım)")
+    kazanc_dk: float = Field(description="Bakım yapılırsa önlenmesi beklenen duruş")
+    bakim_saat: int
+    secildi: bool
+
+
+class BakimPlani(BaseModel):
+    hesaplama_ani: datetime
+    analiz_gun: int
+    ufuk_gun: int
+    kapasite_saat: int
+    secilen_saat: int
+    onlenen_durus_dk: float = Field(description="Seçilen makinelerin kazançlarının toplamı")
+    acgozlu_onlenen_durus_dk: float = Field(
+        description="Karşılaştırma: değer/süre oranına göre açgözlü seçimin kazancı"
+    )
+    makineler: list[MakineRiski] = Field(description="Önce seçilenler, sonra kazanca göre")
+
+
 class AramaIstegi(BaseModel):
     """`GET /ara` sorgu parametreleri."""
 

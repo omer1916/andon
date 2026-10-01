@@ -2,6 +2,7 @@
 
 import { guvenliMarkdown } from "./metin.js";
 import { oeeEkrani } from "./oee.js";
+import { bakimEkrani } from "./bakim.js";
 import { raporEkrani } from "./rapor.js";
 
 const OTURUM_ANAHTARI = "andon.oturum";
@@ -33,8 +34,14 @@ let oturum = oturumuOku();
 let bekleniyor = false;
 let aktifEkran = "sohbet";
 
-const EKRANLAR = { sohbet: "sohbet-ekrani", oee: "oee-ekrani", rapor: "rapor-ekrani" };
+const EKRANLAR = {
+  sohbet: "sohbet-ekrani",
+  oee: "oee-ekrani",
+  rapor: "rapor-ekrani",
+  plan: "plan-ekrani",
+};
 const rapor = raporEkrani({ api, eleman });
+const bakim = bakimEkrani({ api, eleman });
 const oee = oeeEkrani({
   api,
   eleman,
@@ -106,6 +113,11 @@ function ekraniGoster() {
     }),
   );
   bosDurumuGuncelle();
+  // Rol kısıtlı sekmeler (bakım planı) yalnızca o role görünür; asıl kontrol API'de (403).
+  for (const sekme of $("sekmeler").querySelectorAll(".sekme[data-rol]")) {
+    sekme.hidden = sekme.dataset.rol !== oturum.rol;
+    if (sekme.hidden && sekme.dataset.ekran === aktifEkran) aktifEkran = "sohbet";
+  }
   ekranSec(aktifEkran);
 }
 
@@ -119,6 +131,7 @@ function ekranSec(ad) {
   if (ad === "sohbet") $("soru").focus();
   if (ad === "oee") oee.goster();
   if (ad === "rapor") rapor.goster();
+  if (ad === "plan") bakim.goster();
 }
 
 for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {

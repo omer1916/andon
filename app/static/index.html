@@ -21,6 +21,7 @@
       <button type="button" class="sekme" data-ekran="sohbet">Asistan</button>
       <button type="button" class="sekme" data-ekran="oee">OEE</button>
       <button type="button" class="sekme" data-ekran="rapor">Vardiya raporu</button>
+      <button type="button" class="sekme" data-ekran="plan" data-rol="bakim">Bakım planı</button>
     </nav>
     <div class="oturum" id="oturum" hidden>
       <span class="kim"><span id="ad-soyad"></span> <span class="rol" id="rol"></span></span>
@@ -185,6 +186,54 @@
         </div>
         <p class="soluk kucuk" id="rapor-kullanim"></p>
       </article>
+    </section>
+
+    <section id="plan-ekrani" class="panel-ekrani" aria-labelledby="plan-baslik" hidden>
+      <div class="panel-ust">
+        <div>
+          <h1 id="plan-baslik">Bakım planı</h1>
+          <p class="soluk">Son 90 günün arızalarından her makinenin arıza olasılığı hesaplanır;
+            ekibin saati, beklenen duruşu en çok azaltacak makinelere dağıtılır.</p>
+        </div>
+        <form id="plan-formu" class="filtre">
+          <label>Ekip kapasitesi (saat)
+            <input type="number" name="kapasite_saat" min="1" max="200" value="16" required>
+          </label>
+          <label>Ufuk
+            <select name="ufuk_gun">
+              <option value="7" selected>7 gün</option>
+              <option value="14">14 gün</option>
+              <option value="30">30 gün</option>
+            </select>
+          </label>
+          <button type="submit" class="ana-dugme">Planı hesapla</button>
+        </form>
+      </div>
+      <p class="soluk" id="plan-durum" role="status" hidden></p>
+      <div id="plan-icerik" hidden>
+        <div class="kpi-izgara" id="plan-ozet"></div>
+        <section class="panel-kart plan-karti" aria-labelledby="plan-tablo-baslik">
+          <h2 id="plan-tablo-baslik">Makineler</h2>
+          <div id="plan-tablo" class="tablo-kap"></div>
+        </section>
+        <details class="panel-kart aciklama-kutusu">
+          <summary>Nasıl hesaplanıyor?</summary>
+          <p><strong>Arıza olasılığı.</strong> Her makinenin son 90 gündeki arızalar arası
+            süreleri (tamirden sonraki arızaya kadar) ve son tamirden bu yana geçen süre
+            kullanılır. Son süre tamamlanmamış bir gözlemdir (makine henüz bozulmadı); atılırsa
+            makine olduğundan sık bozuluyor görünür. En az 10 aralık varsa Weibull dağılımı,
+            sabit riskli üstel modeli olabilirlik oranı testinde %5 düzeyinde reddederse
+            seçilir; aksi hâlde üstel model kullanılır.</p>
+          <p><strong>Kazanç.</strong> önlenebilirlik × arıza olasılığı × arıza başına hat
+            duruşu. Arıza başına duruş, makinenin geçmiş arızalarının hattı durdurduğu sürenin
+            ortalamasıdır. Önlenebilirlik, arıza tiplerine göre varsayılan paylardır (ör.
+            hidrolik %70, yazılım %10) ve sahadaki bakım kayıtlarıyla güncellenmelidir.</p>
+          <p><strong>Plan.</strong> Toplam bakım süresi kapasiteyi aşmayan ve toplam kazancı en
+            büyük olan makine kümesi, 0/1 sırt çantası problemi olarak dinamik programlamayla
+            kesin çözülür. Açgözlü seçim (kazanç/saat oranına göre) karşılaştırma için
+            gösterilir.</p>
+        </details>
+      </div>
     </section>
   </main>
 

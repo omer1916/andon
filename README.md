@@ -27,6 +27,10 @@ açık bakım taleplerini ve kritik stoğu tek sayfada toplar; asistan da bunlar
 öneriler yazar. Rapor kopyalanıp mesaja yapıştırılabilir ya da yazdırılabilir. Sayıların hepsi
 veritabanından gelir; asistanın yazdığı yorumdaki her sayı bu verilerle karşılaştırılır.
 
+**Bakım planı** (yalnızca bakım rolü) her makinenin önümüzdeki günlerde arıza olasılığını son
+90 günün arızalarından tahmin eder ve ekibin sınırlı saatini, beklenen hat duruşunu en çok
+azaltacak makinelere dağıtır. Şu an arızalı olan makine de "tamirden sonra" notuyla plana girer.
+
 > Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
@@ -44,10 +48,10 @@ veritabanından gelir; asistanın yazdığı yorumdaki her sayı bu verilerle ka
 
 ```mermaid
 flowchart LR
-    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar<br/>/oee · /rapor/vardiya"]
+    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar<br/>/oee · /rapor/vardiya · /bakim-plani"]
     API --> AG["Agent döngüsü<br/>(en fazla 6 adım)"]
     AG <-->|"araç çağrıları"| LLM["Gemini / Ollama<br/>OpenAI uyumlu API"]
-    AG --> T1["ariza_say · oee_hesapla<br/>stok_sorgula · bakim_talebi_olustur"]
+    AG --> T1["ariza_say · oee_hesapla · bakim_plani_oner<br/>stok_sorgula · bakim_talebi_olustur"]
     AG --> T2["dokuman_ara"]
     T1 -->|"parametreli SQL"| PG[("PostgreSQL<br/>+ pgvector")]
     T2 -->|"rol filtreli<br/>vektör araması"| PG
@@ -81,12 +85,12 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (2073 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2432 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Tasarım kararları
 
-**LLM'e serbest SQL yazdırılmıyor.** LLM yalnızca beş parametreli aracı çağırabilir:
+**LLM'e serbest SQL yazdırılmıyor.** LLM yalnızca altı parametreli aracı çağırabilir:
 
 | Araç | Ne yapar |
 |---|---|
@@ -94,6 +98,7 @@ http://localhost:8000/docs adresindedir.
 | `oee_hesapla(hat, baslangic, bitis)` | OEE ve bileşenleri (yüzde), vardiyalara göre OEE, en büyük duruş nedenleri, en çok durduran makineler |
 | `dokuman_ara(soru, k)` | Kılavuzlarda anlamsal arama; doküman kodu ve sayfa numarasıyla |
 | `stok_sorgula(parca_kodu, sadece_kritik)` | Yedek parça miktarı, yeri, kritik seviye |
+| `bakim_plani_oner(kapasite_saat, ufuk_gun)` | Haftalık bakım planı; yalnızca bakım rolü (operatöre düzeltilebilir hata döner) |
 | `bakim_talebi_olustur(makine_kodu, aciklama, oncelik)` | Bakım talebi açar |
 
 - Veritabanına giden her değer SQL parametresidir. LLM ne yazarsa yazsın bir tabloyu silemez, başka
@@ -179,6 +184,39 @@ sayı denetiminden geçer (testle doğrulanır). Gerçek Gemini ile son tamamlan
 Denetim bir kanıt değil, bir süzgeç: küçük tam sayılar (3, 12, 25) veride zaten sık geçtiği için
 uydurulmuş küçük bir tam sayı denetimden kaçabilir. Asıl yakaladığı şey, modelin kendi
 hesapladığı ondalıklı farklar ve veride hiç olmayan yüzdeler.
+
+**Bakım planı: sansürlü Weibull, model seçimi ve sırt çantası.**
+
+1. *Arızalar arası süre.* Her makinenin son 90 günündeki arızalarından, tamirin bitişinden
+   sonraki arızanın başlangıcına kadar geçen süreler çıkarılır. Son tamirden bugüne geçen süre
+   de bir gözlemdir ama tamamlanmamıştır (makine henüz bozulmadı): **sağdan sansürlü**.
+   Atılırsa makine olduğundan sık bozuluyor görünür; testte, sansür atılınca MTBF'in %20'den
+   fazla kısaldığı gösterilir.
+2. *Weibull, en çok olabilirlikle.* R(t) = exp(-(t/η)^β); β < 1 erken arıza, β ≈ 1 rastgele,
+   β > 1 aşınma. Log-olabilirliğin türevleri sıfırlanıp η yok edilince tek bilinmeyenli,
+   β'ya göre artan bir denklem kalır; kökü ikiye bölmeyle bulunur
+   ([`app/guvenilirlik.py`](app/guvenilirlik.py)). Sonuç, %37 sansürlü veride SciPy'nin
+   `CensoredData` uydurmasıyla üç ondalık basamağa kadar aynı (testte 10 rastgele veriyle).
+3. *Model seçimi.* Az veriyle β hem oynak hem yukarı yanlı. Weibull ancak en az 10 arıza aralığı
+   varsa ve sabit riskli (üstel) modeli olabilirlik oranı testinde %5 düzeyinde reddederse
+   seçilir. İlk denemede bu eşik 5 aralıktı ve rastgele (Poisson) üretilmiş veride 16 makinenin
+   6'sında "aşınma" çıktı. Simülasyonla ölçtüm: testin saf üstel veride yanlışlıkla Weibull
+   seçme oranı 6 aralıkta %7,8, 40 aralıkta %5,0; seed verisinin 30 tohumunda %10. Bizim tohum
+   şanssız bir örnekti ve 6–9 noktadan "aşınıyor" demek savunulamaz. Eşik 10'a çıkınca yalnızca
+   P3-RB (15 aralık, oran 7,5) Weibull'e kaldı.
+4. *Kazanç.* önlenebilirlik × arıza olasılığı × arıza başına hat duruşu. Olasılık, makinenin
+   son tamirden beri bozulmadan çalıştığı bilinerek hesaplanan koşullu olasılıktır; şu an
+   arızalı makinede tamirden sonrası (yaş 0) için hesaplanır. Arıza başına duruş, makinenin
+   geçmiş arızalarının hattı durdurduğu sürenin ortalamasıdır (OEE'deki duruş kayıtlarından).
+5. *Plan: 0/1 sırt çantası.* Toplam bakım süresi kapasiteyi aşmayan, toplam kazancı en büyük
+   makine kümesi dinamik programlamayla kesin çözülür (O(n × kapasite)). Açgözlü seçim (kazanç
+   / saat oranına göre) karşılaştırma için hesaplanır: 2 Ekim 2026'da 16 saatlik kapasitede
+   açgözlü seçim 113 dk, dinamik programlama 117 dk önlüyordu. Testlerde dinamik programlama
+   300 rastgele örnekte kaba kuvvetle, gerçek planda yukarıdan aşağı özyinelemeli bir çözümle
+   karşılaştırılır.
+
+Gerçek Gemini, "16 saatimiz var, hangi makinelere öncelik verelim?" sorusunu
+`bakim_plani_oner` aracıyla 2,7 saniyede, $0,0022'ye cevapladı; sayılar planla aynıydı.
 
 **Arıza kaydı makineye bağlı.** Arıza, iş emri ve bakım talebi hatta değil makineye bağlıdır; hatta
 `makineler.hat_id` üzerinden ulaşılır. İki alan birden tutulsaydı bir kaydın makinesi bir hatta,
@@ -277,7 +315,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2073 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2432 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -290,7 +328,8 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_farkli_yoldan` | 611 | Her hat × ay × arıza tipi, her gün, her stok kodu ve makine için API ve araç sonucu, SQL kullanmadan Python'da hesaplanan sonuçla aynı |
 | `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
-| `test_guvenlik_matrisi` | 179 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_guvenlik_matrisi` | 197 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_bakim_plani` | 341 | Weibull MLE'nin bilinen parametreleri bulması ve SciPy ile aynı olması, sansürün etkisi, olabilirlik oranı testinin yanlış alarm oranı, sırt çantasının 300 örnekte kaba kuvvetle aynı olması, plan verisinin SQL'siz hesapla aynı olması, 7 kapasitede en iyi seçim, rol ve doğrulama |
 | `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
@@ -370,6 +409,9 @@ app/
   main.py        FastAPI uç noktaları
   agent.py       araç döngüsü, sistem istemi, istek kaydı
   rapor.py       vardiya raporu: veri, LLM yorumu, sayı denetimi, kural yorumu
+  guvenilirlik.py  sansürlü Weibull MLE, üstel model, olabilirlik oranı testi
+  planlama.py    sırt çantası: dinamik programlama ve açgözlü karşılaştırma
+  bakim_plani.py makine riskleri ve haftalık bakım planı
   tools.py       agent araçları ve JSON şemaları
   llm.py         Gemini/Ollama istemcisi, maliyet hesabı
   rag.py         PDF okuma, parçalama, vektör araması
@@ -381,10 +423,17 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2073 test
+tests/           2432 test
 ```
 
 ## Bilinen eksikler
+
+- **Bakım planının varsayımları.** Önlenebilirlik payları (hidrolik %70, yazılım %10 ...)
+  varsayımdır; sahadaki bakım kayıtlarıyla ölçülmeli. Süreler takvim saatiyle hesaplanıyor,
+  makinenin çalışma saatiyle değil. Olasılık "en az bir arıza" olasılığıdır; haftada birden çok
+  arıza veren makinede önlenen duruşu olduğundan az gösterir. Sahte veride arızalar rastgele
+  üretildiği için modellerin çoğu üstel çıkıyor; aşınmanın görüldüğü gerçek veride Weibull
+  daha çok devreye girer.
 
 - **Değerlendirme seti küçük ve düzeltmeler ona bakılarak yapıldı.** 30/30 iyimser; görülmemiş
   sorulardan oluşan ikinci bir set gerekiyor.
