@@ -75,10 +75,17 @@ def baglam(test_veritabani):
 
 def test_arac_semalari_llm_icin_sade():
     semalar = {s["function"]["name"]: s["function"] for s in arac_semalari()}
-    assert set(semalar) == {"ariza_say", "dokuman_ara", "stok_sorgula", "bakim_talebi_olustur"}
+    assert set(semalar) == {
+        "ariza_say",
+        "oee_hesapla",
+        "dokuman_ara",
+        "stok_sorgula",
+        "bakim_talebi_olustur",
+    }
     metin = json.dumps(semalar)
     assert "anyOf" not in metin and '"title"' not in metin
     assert semalar["ariza_say"]["parameters"]["required"] == ["baslangic", "bitis"]
+    assert semalar["oee_hesapla"]["parameters"]["required"] == ["baslangic", "bitis"]
     oncelik = semalar["bakim_talebi_olustur"]["parameters"]["properties"]["oncelik"]
     assert oncelik["enum"] == ["dusuk", "orta", "yuksek"]
 

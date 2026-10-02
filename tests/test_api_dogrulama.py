@@ -24,6 +24,14 @@ ARIZALAR_GECERSIZ = {
     "hat-nul": {"hat": "Pres\x003"},
 }
 
+OEE_GECERSIZ = {
+    "tarih-yok-gun": {"baslangic": "2026-02-30"},
+    "tarih-metin": {"bitis": "yarin"},
+    "ters-aralik": {"baslangic": "2026-09-02", "bitis": "2026-09-01"},
+    "bilinmeyen-parametre": {"grup": "hat"},
+    "hat-nul": {"hat": "Pres\x003"},
+}
+
 ARA_GECERSIZ = {
     "soru-yok": {},
     "soru-kisa": {"soru": "ab"},
@@ -59,6 +67,11 @@ def sahte_llm(istemci):
 @pytest.mark.parametrize("parametreler", ARIZALAR_GECERSIZ.values(), ids=ARIZALAR_GECERSIZ.keys())
 def test_arizalar_gecersiz_parametre_422(istemci, parametreler):
     assert istemci.get("/arizalar", params=parametreler).status_code == 422
+
+
+@pytest.mark.parametrize("parametreler", OEE_GECERSIZ.values(), ids=OEE_GECERSIZ.keys())
+def test_oee_gecersiz_parametre_422(istemci, parametreler):
+    assert istemci.get("/oee", params=parametreler).status_code == 422
 
 
 @pytest.mark.parametrize("parametreler", ARA_GECERSIZ.values(), ids=ARA_GECERSIZ.keys())
@@ -115,6 +128,8 @@ def test_arizalar_sinir_degerleri_kabul_edilir(istemci, parametreler):
         assert cevap.json()["toplam"] > 0
 
 
-@pytest.mark.parametrize("yol", ["/hatlar", "/arizalar", "/ara?soru=pres", "/kullanim", "/saglik"])
+@pytest.mark.parametrize(
+    "yol", ["/hatlar", "/arizalar", "/oee", "/ara?soru=pres", "/kullanim", "/saglik"]
+)
 def test_yanlis_http_yontemi_405(istemci, yol):
     assert istemci.post(yol).status_code == 405

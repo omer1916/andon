@@ -17,6 +17,10 @@
       <strong translate="no">Andon</strong>
       <span class="alt-baslik">Fabrika asistanı</span>
     </div>
+    <nav class="sekmeler" id="sekmeler" aria-label="Ekranlar" hidden>
+      <button type="button" class="sekme" data-ekran="sohbet">Asistan</button>
+      <button type="button" class="sekme" data-ekran="oee">OEE</button>
+    </nav>
     <div class="oturum" id="oturum" hidden>
       <span class="kim"><span id="ad-soyad"></span> <span class="rol" id="rol"></span></span>
       <button type="button" class="metin-dugme" id="cikis">Çıkış</button>
@@ -55,6 +59,59 @@
         <span id="soru-ipucu" class="gorunmez">Göndermek için Enter, yeni satır için Shift+Enter.</span>
         <button type="submit" class="ana-dugme" id="gonder">Sor</button>
       </form>
+    </section>
+
+    <section id="oee-ekrani" class="panel-ekrani" aria-labelledby="oee-baslik" hidden>
+      <div class="panel-ust">
+        <div>
+          <h1 id="oee-baslik">OEE</h1>
+          <p class="soluk" id="oee-aralik"></p>
+        </div>
+        <form id="oee-filtre" class="filtre">
+          <label>Hat
+            <select name="hat"><option value="">Bütün fabrika</option></select>
+          </label>
+          <label>Dönem
+            <select name="donem">
+              <option value="7">Son 7 gün</option>
+              <option value="30" selected>Son 30 gün</option>
+              <option value="gecen-ay">Geçen ay</option>
+              <option value="bu-ay">Bu ay</option>
+              <option value="180">Son 6 ay</option>
+            </select>
+          </label>
+        </form>
+      </div>
+      <p class="soluk" id="oee-durum" role="status"></p>
+      <p class="soluk" id="oee-bos" hidden>Bu dönemde tamamlanmış vardiya kaydı yok.</p>
+      <div id="oee-icerik">
+        <div class="kpi-izgara" id="oee-kpi"></div>
+        <p class="lejant soluk"><span class="nokta yesil"></span>%85 ve üstü dünya standardı
+          <span class="nokta sari"></span>%65–85 <span class="nokta kirmizi"></span>%65 altı</p>
+        <div class="panel-izgara">
+          <section class="panel-kart genis" aria-labelledby="oee-trend-baslik">
+            <h2 id="oee-trend-baslik">Günlük OEE</h2>
+            <div id="oee-trend"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="oee-pareto-baslik">
+            <h2 id="oee-pareto-baslik">Duruş nedenleri</h2>
+            <div id="oee-pareto"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="oee-hatlar-baslik">
+            <h2 id="oee-hatlar-baslik">Hatlar</h2>
+            <div id="oee-hatlar" class="tablo-kap"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="oee-vardiya-baslik">
+            <h2 id="oee-vardiya-baslik">Vardiyalar</h2>
+            <div id="oee-vardiyalar"></div>
+          </section>
+          <section class="panel-kart" aria-labelledby="oee-makine-baslik">
+            <h2 id="oee-makine-baslik">Hattı en uzun durduran makineler</h2>
+            <div id="oee-makineler"></div>
+          </section>
+        </div>
+        <button type="button" class="ana-dugme asistana-sor" id="oee-sor">Asistana sor: OEE neden bu seviyede?</button>
+      </div>
     </section>
   </main>
 
