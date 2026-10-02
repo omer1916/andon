@@ -156,7 +156,11 @@ def test_kural_yorumu_da_sayi_denetiminden_gecer(baglanti, test_verisi, sira):
     """LLM'siz yorum da yalnızca verideki sayıları kullanır (aynı denetimle)."""
     v = rapor.rapor_verisi(baglanti, _ornek_vardiyalar(test_verisi)[sira])
     yorum = rapor.kural_yorumu(v)
-    assert rapor.uydurulmus_sayilar(yorum, rapor.izinli_sayilar(rapor.llm_verisi(v))) == []
+    veri = rapor.llm_verisi(v)
+    assert rapor.uydurulmus_sayilar(yorum, rapor.izinli_sayilar(veri)) == []
+    # Yorumdaki sayımlar veride açıkça var; başka bir alandaki aynı sayıya tesadüfen dayanmaz.
+    assert veri["vardiyada_baslayan_ariza_sayisi"] == len(v["arizalar"])
+    assert veri["hatti_durduran_ariza_sayisi"] == sum(a["hat_durdu"] for a in v["arizalar"])
 
 
 def test_kural_yorumu_dusuk_oee_suren_ariza_ve_kritik_stogu_soyler(baglanti, test_verisi):

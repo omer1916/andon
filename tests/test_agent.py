@@ -7,7 +7,14 @@ import openai
 import psycopg
 import pytest
 
-from app.agent import MAKS_ADIM, SohbetHatasi, kaydet, sohbet
+from app.agent import (
+    MAKS_ADIM,
+    SohbetHatasi,
+    kaydet,
+    sistem_istemi,
+    sohbet,
+    tarih_araliklari,
+)
 from app.auth import Kullanici
 from app.db import TZ
 from app.llm import AracCagrisi, LLMYaniti, maliyet_hesapla
@@ -69,7 +76,10 @@ def arac_sonuclari(llm: SenaryoluLLM) -> list[dict]:
 def baglam(test_veritabani):
     with psycopg.connect(test_veritabani, autocommit=True) as conn:
         yield AracBaglami(
-            conn=conn, embedder=SahteEmbedder(), kullanici=Kullanici("test", "Test", "bakim")
+            conn=conn,
+            embedder=SahteEmbedder(),
+            kullanici=Kullanici("test", "Test", "bakim"),
+            simdi=SABIT_AN,
         )
 
 
@@ -101,7 +111,7 @@ def test_demo_sorusu_akisi(baglam, test_verisi):
         ),
         cevap_ver("Geçen ay 25 arıza oldu. İlk kontrol basınç sensörüdür (PRES-BK-01, s. 4)."),
     )
-    sonuc = sohbet("Pres 3 geçen ay kaç arıza, ilk neye bakmalıyım?", llm, baglam, simdi=SABIT_AN)
+    sonuc = sohbet("Pres 3 geçen ay kaç arıza, ilk neye bakmalıyım?", llm, baglam)
 
     makine_hatti = {m["id"]: m["hat_id"] for m in test_verisi["makineler"]}
     beklenen = sum(
@@ -148,7 +158,7 @@ def test_demo_sorusu_akisi(baglam, test_verisi):
 )
 def test_arac_hatasi_llm_e_duzeltilebilir_mesaj_olarak_doner(baglam, cagri, beklenen_hata):
     llm = SenaryoluLLM(arac_iste(cagri), cevap_ver("tamam"))
-    sonuc = sohbet("soru", llm, baglam, simdi=SABIT_AN)
+    sonuc = sohbet("soru", llm, baglam)
     (arac_sonucu,) = arac_sonuclari(llm)
     assert beklenen_hata in arac_sonucu["hata"]
     assert sonuc.arac_cagrilari[0]["hata"] == arac_sonucu["hata"]
@@ -156,7 +166,7 @@ def test_arac_hatasi_llm_e_duzeltilebilir_mesaj_olarak_doner(baglam, cagri, bekl
 
 def test_stok_sorgusu_kritik_parcalari_doner(baglam):
     llm = SenaryoluLLM(arac_iste(("stok_sorgula", {"sadece_kritik": True})), cevap_ver("tamam"))
-    sohbet("kritik stok", llm, baglam, simdi=SABIT_AN)
+    sohbet("kritik stok", llm, baglam)
     (arac_sonucu,) = arac_sonuclari(llm)
     kodlar = {p["parca_kodu"] for p in arac_sonucu["sonuc"]}
     assert "SNS-002" in kodlar
@@ -169,7 +179,7 @@ def test_bir_istekte_tek_bakim_talebi_acilir(baglam):
         arac_iste(("bakim_talebi_olustur", talep), ("bakim_talebi_olustur", talep)),
         cevap_ver("Talep açıldı."),
     )
-    sohbet("P3-HP için talep aç", llm, baglam, simdi=SABIT_AN)
+    sohbet("P3-HP için talep aç", llm, baglam)
 
     ilk, ikinci = arac_sonuclari(llm)
     talep_id = ilk["sonuc"]["talep_id"]
@@ -184,7 +194,7 @@ def test_bir_istekte_tek_bakim_talebi_acilir(baglam):
 
 def test_adim_siniri_asilinca_durur(baglam):
     llm = SenaryoluLLM(arac_iste(("stok_sorgula", {})))  # hep araç ister, hiç cevap vermez
-    sonuc = sohbet("soru", llm, baglam, simdi=SABIT_AN)
+    sonuc = sohbet("soru", llm, baglam)
     assert sonuc.adim_sayisi == MAKS_ADIM
     assert sonuc.hata and "cevaplayamadım" in sonuc.cevap
 
@@ -192,7 +202,7 @@ def test_adim_siniri_asilinca_durur(baglam):
 def test_llm_hatasinda_kismi_sonuc_korunur(baglam):
     llm = SenaryoluLLM(arac_iste(("stok_sorgula", {})), RuntimeError("bağlantı koptu"))
     with pytest.raises(SohbetHatasi) as hata:
-        sohbet("soru", llm, baglam, simdi=SABIT_AN)
+        sohbet("soru", llm, baglam)
     sonuc = hata.value.sonuc
     assert (sonuc.adim_sayisi, sonuc.girdi_token) == (1, 100)
     assert "bağlantı koptu" in sonuc.hata
@@ -212,7 +222,7 @@ def test_llm_argumaninda_nul_kaydi_ve_cevabi_bozmaz(baglam):
         ),
         cevap_ver("Tamam.\x00"),
     )
-    sonuc = sohbet("soru", llm, baglam, simdi=SABIT_AN)
+    sonuc = sohbet("soru", llm, baglam)
     assert sonuc.arac_cagrilari[0]["hata"]
     kayit_id = kaydet(baglam.conn, "soru", "test", "sahte", sonuc)
     cevap, argumanlar = baglam.conn.execute(
@@ -220,6 +230,31 @@ def test_llm_argumaninda_nul_kaydi_ve_cevabi_bozmaz(baglam):
         [kayit_id],
     ).fetchone()
     assert (cevap, argumanlar) == ("Tamam.", "Pres 3")
+
+
+@pytest.mark.parametrize(
+    ("bugun", "ad", "beklenen"),
+    [
+        (date(2026, 9, 30), "geçen ay", (date(2026, 8, 1), date(2026, 8, 31))),
+        (date(2026, 3, 31), "geçen ay", (date(2026, 2, 1), date(2026, 2, 28))),
+        (date(2026, 1, 5), "geçen ay", (date(2025, 12, 1), date(2025, 12, 31))),
+        (date(2026, 9, 30), "bu hafta", (date(2026, 9, 28), date(2026, 9, 30))),  # Çarşamba
+        (date(2026, 9, 28), "geçen hafta", (date(2026, 9, 21), date(2026, 9, 27))),
+        (date(2026, 1, 3), "son 7 gün", (date(2025, 12, 28), date(2026, 1, 3))),
+        (date(2026, 1, 1), "dün", (date(2025, 12, 31), date(2025, 12, 31))),
+        (date(2026, 9, 30), "bu yıl", (date(2026, 1, 1), date(2026, 9, 30))),
+    ],
+)
+def test_tarih_araliklari(bugun, ad, beklenen):
+    assert tarih_araliklari(bugun)[ad] == beklenen
+
+
+def test_sistem_istemi_hazir_araliklari_ve_rolu_icerir():
+    istem = sistem_istemi(SABIT_AN, Kullanici("t", "Test Kişi", "operator"))
+    assert "Şu an: 2026-09-30 12:00, Çarşamba" in istem
+    assert "- geçen ay: 2026-08-01 - 2026-08-31" in istem
+    assert "- bugün: 2026-09-30\n" in istem
+    assert "Test Kişi (operatör)" in istem and "bakım kılavuzlarını göremez" in istem
 
 
 def test_maliyet_hesabi():

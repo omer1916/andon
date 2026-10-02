@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_DOSYASI = Path(__file__).resolve().parent.parent / ".env"
@@ -24,6 +25,17 @@ class Ayarlar(BaseSettings):
     jwt_gizli_anahtar: str | None = None
     # seed.py'nin oluşturduğu demo kullanıcılarının (operator, bakim) parolası
     demo_parola: str = "andon-demo"
+
+    # Telegram botu (scripts/telegram_bot.py). Token @BotFather'dan alınır.
+    telegram_bot_token: str | None = None
+    # Botun kullanıcı adı (ör. andon_fabrika_bot); verilirse arayüz tek tıkla eşleştirme
+    # bağlantısı gösterir.
+    telegram_bot_kullanici_adi: str | None = None
+    # Arıza bildiriminin ayrıntısı. Bot mesajları Telegram sunucularından geçer; "kisa" modda
+    # kılavuz alıntısı ve stok gönderilmez, yalnızca hattın durduğu bildirilir.
+    telegram_bildirim_ayrintisi: Literal["ayrintili", "kisa"] = "ayrintili"
+    # Telegram'dan gelen talep fotoğrafları bu kadar gün sonra silinir.
+    telegram_fotograf_saklama_gun: int = Field(90, ge=1)
 
 
 def ayarlar() -> Ayarlar:

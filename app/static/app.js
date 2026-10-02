@@ -4,6 +4,7 @@ import { guvenliMarkdown } from "./metin.js";
 import { oeeEkrani } from "./oee.js";
 import { bakimEkrani } from "./bakim.js";
 import { raporEkrani } from "./rapor.js";
+import { telegramPenceresi } from "./telegram.js";
 
 const OTURUM_ANAHTARI = "andon.oturum";
 const ROL_ADLARI = { operator: "Operatör", bakim: "Bakım mühendisi" };
@@ -40,8 +41,9 @@ const EKRANLAR = {
   rapor: "rapor-ekrani",
   plan: "plan-ekrani",
 };
-const rapor = raporEkrani({ api, eleman });
+const rapor = raporEkrani({ api, eleman, rol: () => oturum?.rol });
 const bakim = bakimEkrani({ api, eleman });
+telegramPenceresi({ api });
 const oee = oeeEkrani({
   api,
   eleman,

@@ -42,6 +42,8 @@ class AracBaglami:
     kullanici: Kullanici
     kaynaklar: list[dict] = field(default_factory=list)  # dokuman_ara'nın bulduğu parçalar
     acilan_talepler: list[int] = field(default_factory=list)
+    # Sistem istemindeki "şu an" ve araçların "bugün"ü aynı saatten gelsin (testlerde sabit).
+    simdi: datetime = field(default_factory=lambda: datetime.now(TZ))
 
 
 class ArizaSayGirdisi(BaseModel):
@@ -93,14 +95,25 @@ class BakimPlaniGirdisi(BaseModel):
 
 
 def _hat_dogrula(b: AracBaglami, hat: str | None) -> None:
-    if hat is not None and sorgular.hat_adini_bul(b.conn, hat) is None:
-        gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(b.conn))
-        raise AracHatasi(f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+    if hata := sorgular.hat_hatasi(b.conn, hat):
+        raise AracHatasi(hata)
 
 
 def _ariza_say(b: AracBaglami, g: ArizaSayGirdisi) -> dict:
     _hat_dogrula(b, g.hat)
     ozet = sorgular.ariza_ozeti(b.conn, **g.model_dump())
+    if ozet["toplam"] == 0:
+        # Sistem istemi hazır tarih aralıklarını verir; bu, model yine de yanlış yılı yazarsa
+        # diye (Telegram provasında 2026 yerine 2025) son güvenlik. Aralık kayıtların
+        # başlangıcından önceyse ya da gelecekteyse sıfır yerine düzeltilebilir bir hata döner.
+        # Son arızadan sonra ama bugüne kadar olan aralık hatalı değildir: "bugün 0 arıza".
+        aralik = sorgular.ariza_araligi(b.conn)
+        bugun = b.simdi.astimezone(TZ).date()
+        if aralik and (g.bitis < aralik[0] or g.baslangic > bugun):
+            raise AracHatasi(
+                f"Bu aralıkta kayıt olamaz: bugün {bugun}, arıza kayıtları {aralik[0]} "
+                "tarihinden başlıyor. Tarih aralığını, özellikle yılı, kontrol et."
+            )
     return {**g.model_dump(mode="json"), **ozet}
 
 
@@ -195,7 +208,7 @@ def _plan_satiri(r: dict) -> dict:
 def _bakim_plani_oner(b: AracBaglami, g: BakimPlaniGirdisi) -> dict:
     if b.kullanici.rol != "bakim":
         raise AracHatasi("Bakım planı yalnızca bakım mühendislerine açık.")
-    plan = bakim_plani.bakim_plani(b.conn, datetime.now(TZ), **g.model_dump())
+    plan = bakim_plani.bakim_plani(b.conn, b.simdi, **g.model_dump())
     secilen = [r for r in plan["makineler"] if r["secildi"]]
     disarida = [r for r in plan["makineler"] if not r["secildi"] and r["kazanc_dk"] > 0]
     return {

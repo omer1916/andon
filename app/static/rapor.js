@@ -12,7 +12,7 @@ const DUSUS_ESIGI = 0.05; // son 7 güne göre 5 puandan fazla düşüş işaret
 
 const $ = (id) => document.getElementById(id);
 
-export function raporEkrani({ api, eleman }) {
+export function raporEkrani({ api, eleman, rol }) {
   const form = $("rapor-formu");
   let sonRapor = null;
 
@@ -91,7 +91,7 @@ export function raporEkrani({ api, eleman }) {
     );
     $("rapor-talep-baslik").textContent =
       `Açık bakım talepleri (${SAYI.format(r.acik_talep_sayisi)})`;
-    $("rapor-talepler").replaceChildren(liste(r.acik_talepler, talepMetni, "Açık talep yok."));
+    $("rapor-talepler").replaceChildren(liste(r.acik_talepler, talepSatiri, "Açık talep yok."));
     $("rapor-stok").replaceChildren(
       liste(r.kritik_stok, parcaMetni, "Bütün parçalar minimum seviyenin üstünde."),
     );
@@ -129,7 +129,11 @@ export function raporEkrani({ api, eleman }) {
   function liste(ogeler, metin, bos) {
     if (!ogeler.length) return eleman("p", "soluk", bos);
     const ul = eleman("ul", "rapor-listesi");
-    for (const oge of ogeler) ul.append(eleman("li", null, metin(oge)));
+    for (const oge of ogeler) {
+      const li = eleman("li");
+      li.append(metin(oge)); // metin ya da DOM düğümü; HTML olarak yorumlanmaz
+      ul.append(li);
+    }
     return ul;
   }
 
@@ -145,8 +149,29 @@ export function raporEkrani({ api, eleman }) {
     return `${saat} ${a.makine_kodu} (${a.hat}): ${a.ariza_tipi}, ${ONEM[a.onem]} önem${durdu}, ${sure}. ${a.aciklama}`;
   }
 
-  function talepMetni(t) {
-    return `#${t.id} ${t.makine_kodu} · ${ONEM[t.oncelik]} öncelik: ${t.aciklama}`;
+  function talepSatiri(t) {
+    const satir = eleman("span", null, `#${t.id} ${t.makine_kodu} · ${ONEM[t.oncelik]} öncelik: ${t.aciklama}`);
+    if (t.fotograf_var && rol() === "bakim") {
+      const dugme = eleman("button", "metin-dugme", "📷 fotoğraf");
+      dugme.type = "button";
+      dugme.addEventListener("click", () => fotografAc(t.id));
+      satir.append(" ", dugme);
+    }
+    return satir;
+  }
+
+  // Fotoğraf token gerektirdiği için doğrudan bağlantıyla açılamaz; indirilip yeni sekmede
+  // gösterilir.
+  async function fotografAc(id) {
+    try {
+      const cevap = await api(`/talepler/${id}/fotograf`);
+      if (!cevap.ok) throw new Error(`HTTP ${cevap.status}`);
+      const adres = URL.createObjectURL(await cevap.blob());
+      window.open(adres, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(adres), 60_000);
+    } catch (e) {
+      if (e.name !== "OturumBitti") durum("Fotoğraf açılamadı; tekrar deneyin.");
+    }
   }
 
   function parcaMetni(p) {

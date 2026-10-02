@@ -39,6 +39,14 @@ def hat_adini_bul(conn: psycopg.Connection, ad: str) -> str | None:
     return satir[0] if satir else None
 
 
+def hat_hatasi(conn: psycopg.Connection, hat: str | None) -> str | None:
+    """Hat verilmiş ama yoksa geçerli hatları sayan hata mesajı; API, agent ve bot ortak."""
+    if hat is None or hat_adini_bul(conn, hat) is not None:
+        return None
+    gecerli = ", ".join(h["ad"] for h in hatlari_getir(conn))
+    return f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}"
+
+
 def _ariza_kaynagi(
     hat: str | None, baslangic: date | None, bitis: date | None, ariza_tipi: str | None
 ) -> tuple[sql.Composed, dict]:
@@ -258,6 +266,16 @@ def oee_hesapla(
     return sonuc
 
 
+def ariza_araligi(conn: psycopg.Connection) -> tuple[date, date] | None:
+    """Arıza kayıtlarının ilk ve son günü (Türkiye saati); kayıt yoksa None."""
+    ilk, son = conn.execute(
+        "SELECT min(timezone(%(tz)s, baslangic))::date, max(timezone(%(tz)s, baslangic))::date "
+        "FROM ariza_kayitlari",
+        {"tz": TZ.key},
+    ).fetchone()
+    return None if ilk is None else (ilk, son)
+
+
 def uretim_araligi(conn: psycopg.Connection) -> tuple[date, date] | None:
     """Vardiya kayıtlarının ilk ve son günü (Türkiye saati); kayıt yoksa None."""
     ilk, son = conn.execute(
@@ -397,7 +415,9 @@ def acik_talepler(conn: psycopg.Connection, limit: int = 5) -> tuple[int, list[d
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT t.id, m.kod AS makine_kodu, h.ad AS hat, t.oncelik, t.aciklama, t.olusturma
+            SELECT t.id, m.kod AS makine_kodu, h.ad AS hat, t.oncelik, t.aciklama, t.olusturma,
+                   EXISTS (SELECT 1 FROM talep_fotograflari f WHERE f.talep_id = t.id)
+                       AS fotograf_var
             FROM bakim_talepleri t
             JOIN makineler m ON m.id = t.makine_id
             JOIN hatlar h    ON h.id = m.hat_id

@@ -198,6 +198,7 @@ class RaporTalebi(BaseModel):
     oncelik: Onem
     aciklama: str
     olusturma: datetime
+    fotograf_var: bool = Field(description="Telegram'dan fotoğrafla açıldıysa")
 
 
 class KritikParca(BaseModel):
@@ -360,6 +361,21 @@ class Token(BaseModel):
     kullanici_adi: str
     ad_soyad: str
     rol: Literal["operator", "bakim"]
+
+
+class TelegramKodu(BaseModel):
+    kod: str = Field(description="6 haneli, tek kullanımlık; botta /baglan KOD yazılır")
+    gecerlilik_dk: int
+    baglanti: str | None = Field(
+        description="Tek tıkla eşleştirme bağlantısı (t.me/<bot>?start=KOD); bot adı ayarlıysa"
+    )
+
+
+class TelegramDurumu(BaseModel):
+    bagli: bool
+    bot_kullanici_adi: str | None
+    bildirim_ayrintisi: Literal["ayrintili", "kisa"]
+    fotograf_saklama_gun: int
 
 
 class Saglik(BaseModel):

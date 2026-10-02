@@ -28,6 +28,10 @@ UC_NOKTALAR = {
     "pdf-bakim": ("GET", "/dokumanlar/PRES-BK-01/pdf", None, {"operator": 404, "bakim": 200}),
     "chat": ("POST", "/chat", {"soru": "merhaba"}, {"operator": 200, "bakim": 200}),
     "rapor": ("POST", "/rapor/vardiya", {}, {"operator": 200, "bakim": 200}),
+    "telegram-kod": ("POST", "/telegram/kod", None, {"operator": 200, "bakim": 200}),
+    "telegram-durum": ("GET", "/telegram/durum", None, {"operator": 200, "bakim": 200}),
+    "telegram-sil": ("DELETE", "/telegram/baglanti", None, {"operator": 204, "bakim": 204}),
+    "talep-fotografi": ("GET", "/talepler/999999/fotograf", None, {"operator": 403, "bakim": 404}),
 }
 
 

@@ -37,6 +37,26 @@ services:
     volumes:
       - model-onbellegi:/model-onbellegi
 
+  # Telegram botu (isteğe bağlı): docker compose --profile telegram up -d
+  # .env'de TELEGRAM_BOT_TOKEN gerekir. Veritabanını API servisi hazırlar; bot onu bekler.
+  telegram:
+    build: .
+    profiles: [telegram]
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}
+    command: ["python", "-m", "scripts.telegram_bot"]
+    # Ağ kopmalarını bot kendisi yeniden dener; çıkıyorsa ayar hatasıdır (ör. token yok),
+    # sonsuza kadar yeniden başlamasın.
+    restart: on-failure:3
+    volumes:
+      - model-onbellegi:/model-onbellegi
+
 volumes:
   pgdata:
   model-onbellegi:

@@ -15,11 +15,11 @@ import openai
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi import Path as FastAPIPath
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, agent, bakim_plani, rag, rapor, sorgular
+from app import __version__, agent, bakim_plani, rag, rapor, sorgular, telegram_bot
 from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
 from app.ayarlar import ayarlar
 from app.db import TZ, havuz_olustur
@@ -41,6 +41,8 @@ from app.models import (
     Saglik,
     SohbetCevabi,
     SohbetIstegi,
+    TelegramDurumu,
+    TelegramKodu,
     Token,
     VardiyaRaporu,
 )
@@ -142,9 +144,8 @@ def hatlar(conn: Baglanti, _: AktifKullanici):
 
 
 def _hat_dogrula(conn: psycopg.Connection, hat: str | None) -> None:
-    if hat is not None and sorgular.hat_adini_bul(conn, hat) is None:
-        gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(conn))
-        raise HTTPException(404, f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+    if hata := sorgular.hat_hatasi(conn, hat):
+        raise HTTPException(404, hata)
 
 
 @router.get(
@@ -314,6 +315,74 @@ def dokuman_pdf(
         media_type="application/pdf",
         content_disposition_type="inline",
         filename=dokuman["dosya"],
+    )
+
+
+@router.post(
+    "/telegram/kod",
+    response_model=TelegramKodu,
+    summary="Telegram botuyla eşleştirme için 10 dakika geçerli tek kullanımlık kod",
+)
+def telegram_kodu(kullanici: AktifKullanici, conn: Baglanti):
+    kod = telegram_bot.kod_uret(conn, kullanici.kullanici_adi)
+    bot = ayarlar().telegram_bot_kullanici_adi
+    return TelegramKodu(
+        kod=kod,
+        gecerlilik_dk=int(telegram_bot.KOD_GECERLILIK.total_seconds() // 60),
+        baglanti=f"https://t.me/{bot}?start={kod}" if bot else None,
+    )
+
+
+@router.get(
+    "/telegram/durum",
+    response_model=TelegramDurumu,
+    summary="Kullanıcının Telegram bağlantısı ve botun gizlilik ayarları",
+)
+def telegram_durumu(kullanici: AktifKullanici, conn: Baglanti):
+    a = ayarlar()
+    return TelegramDurumu(
+        bagli=telegram_bot.bagli_mi(conn, kullanici.kullanici_adi),
+        bot_kullanici_adi=a.telegram_bot_kullanici_adi,
+        bildirim_ayrintisi=a.telegram_bildirim_ayrintisi,
+        fotograf_saklama_gun=a.telegram_fotograf_saklama_gun,
+    )
+
+
+@router.delete(
+    "/telegram/baglanti",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Kullanıcının Telegram bağlantısını ve bekleyen kodlarını siler",
+)
+def telegram_baglantisini_sil(kullanici: AktifKullanici, conn: Baglanti):
+    telegram_bot.baglantiyi_sil(conn, kullanici.kullanici_adi)
+
+
+@router.get(
+    "/talepler/{talep_id}/fotograf",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/jpeg": {}}},
+        403: {"description": "Yalnızca bakım rolü"},
+        404: {"description": "Talebin fotoğrafı yok"},
+    },
+    summary="Telegram'dan fotoğrafla açılan bakım talebinin fotoğrafı (yalnızca bakım rolü)",
+)
+def talep_fotografi(
+    talep_id: Annotated[int, FastAPIPath(ge=1, le=2_147_483_647)],
+    conn: Baglanti,
+    _: Annotated[Kullanici, Depends(rol_gerekli("bakim"))],
+):
+    satir = conn.execute(
+        "SELECT icerik, mime FROM talep_fotograflari WHERE talep_id = %s ORDER BY id DESC LIMIT 1",
+        [talep_id],
+    ).fetchone()
+    if satir is None:
+        raise HTTPException(404, "Bu talebin fotoğrafı yok.")
+    # Kişisel veri içerebilir: tarayıcı ve ara sunucular saklamasın.
+    return Response(
+        bytes(satir[0]),
+        media_type=satir[1],
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 

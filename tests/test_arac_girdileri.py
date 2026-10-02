@@ -5,13 +5,15 @@ SQL injection denemeleri parametre olarak gittiği için etkisiz kalmalı: veri 
 """
 
 import json
+from dataclasses import replace
+from datetime import timedelta
 
 import psycopg
 import pytest
 
 from app.auth import Kullanici
 from app.tools import AracBaglami, arac_calistir
-from tests.conftest import SahteEmbedder
+from tests.conftest import SABIT_AN, SahteEmbedder
 
 TARIH = {"baslangic": "2026-08-01", "bitis": "2026-08-31"}
 TALEP = {"makine_kodu": "P3-HP", "aciklama": "Basınç düşüyor", "oncelik": "orta"}
@@ -32,6 +34,8 @@ GECERSIZ = [
     ("ariza_say", {**TARIH, "hat": ""}, "Geçerli hatlar"),
     ("ariza_say", {**TARIH, "hat": "Pres 3' OR '1'='1"}, "Geçerli hatlar"),
     ("ariza_say", {**TARIH, "hat": "Pres 3\x00"}, "geçersiz karakter"),
+    ("ariza_say", {"baslangic": "2025-09-25", "bitis": "2025-10-02"}, "özellikle yılı"),
+    ("ariza_say", {"baslangic": "2027-01-01", "bitis": "2027-01-31"}, "arıza kayıtları 2026-"),
     ("dokuman_ara", {}, "soru: Field required"),
     ("dokuman_ara", {"soru": "ab"}, "soru"),
     ("dokuman_ara", {"soru": None}, "soru"),
@@ -71,7 +75,10 @@ def _kimlik(oge) -> str:
 def baglam(test_veritabani):
     with psycopg.connect(test_veritabani, autocommit=True) as conn:
         yield AracBaglami(
-            conn=conn, embedder=SahteEmbedder(), kullanici=Kullanici("test-girdi", "T", "bakim")
+            conn=conn,
+            embedder=SahteEmbedder(),
+            kullanici=Kullanici("test-girdi", "T", "bakim"),
+            simdi=SABIT_AN,
         )
 
 
@@ -82,6 +89,15 @@ def test_gecersiz_arguman_duzeltilebilir_hata_doner(baglam, oge):
     cikti = arac_calistir(arac, json.dumps(argumanlar), baglam)
     assert set(cikti) == {"hata"}
     assert beklenen in cikti["hata"]
+
+
+def test_bugun_henuz_ariza_yoksa_sifir_doner_hata_degil(baglam):
+    """Yalnızca kayıtlardan önceki ya da gelecekteki aralık hata sayılır; son arızadan sonra
+    bugüne kadar olan günler için doğru cevap 0'dır."""
+    gunler = json.dumps({"baslangic": "2026-10-02", "bitis": "2026-10-03"})
+    uc_gun_sonra = replace(baglam, simdi=SABIT_AN + timedelta(days=3))
+    assert arac_calistir("ariza_say", gunler, uc_gun_sonra)["sonuc"]["toplam"] == 0
+    assert "özellikle yılı" in arac_calistir("ariza_say", gunler, baglam)["hata"]  # gelecek
 
 
 @pytest.mark.parametrize(

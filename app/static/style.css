@@ -1068,3 +1068,88 @@ select:focus-visible {
   width: 110px;
   padding: 7px 10px;
 }
+
+/* --- Telegram penceresi ---------------------------------------------------- */
+
+.telegram-penceresi {
+  width: min(520px, 94vw);
+  padding: 20px 22px;
+  border: 1px solid var(--cizgi);
+  border-radius: var(--yaricap);
+  background: var(--panel);
+  color: var(--yazi);
+}
+
+.telegram-penceresi::backdrop {
+  background: rgb(10 12 16 / 0.55);
+}
+
+.pencere-ust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pencere-ust h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.pencere-ust form {
+  margin: 0;
+}
+
+.adimlar {
+  padding-left: 20px;
+}
+
+.kod-alani {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--kod-zemin);
+}
+
+.telegram-kod {
+  font: 700 1.8rem/1.1 ui-monospace, "Cascadia Code", Consolas, monospace;
+  letter-spacing: 0.15em;
+}
+
+.kod-alani a.ana-dugme {
+  text-decoration: none;
+}
+
+.pencere-dugmeleri {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.tehlike {
+  color: var(--hata-yazi);
+}
+
+.gizlilik {
+  margin-top: 14px;
+  font-size: 0.86rem;
+}
+
+.gizlilik summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.gizlilik ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.gizlilik li {
+  margin-bottom: 4px;
+}
