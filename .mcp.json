@@ -2,7 +2,12 @@
   "mcpServers": {
     "postgres": {
       "command": "uvx",
-      "args": ["postgres-mcp==0.3.0", "--access-mode=restricted"],
+      "args": [
+        "--with",
+        "mcp<2",
+        "postgres-mcp==0.3.0",
+        "--access-mode=restricted"
+      ],
       "env": {
         "DATABASE_URI": "${ANDON_DATABASE_URI:-postgresql://andon:andon@127.0.0.1:5432/andon}"
       }

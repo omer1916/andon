@@ -51,7 +51,7 @@ kurala göre uygulanmalı.
 
 ## Veritabanı MCP'si (`.mcp.json`)
 
-[Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp) (`postgres-mcp==0.3.0`, MIT): Claude yerel andon
+[Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp) (`postgres-mcp==0.3.0`, MIT; `mcp` 2.x ile uyumsuz olduğu için `mcp<2` ile çalıştırılır): Claude yerel andon
 veritabanına **salt okunur** (`--access-mode=restricted`) bağlanır; sorgu planlarını inceler,
 index önerir, veritabanı sağlığını kontrol eder. Veriyi ve şemayı değiştiremez.
 
