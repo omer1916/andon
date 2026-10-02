@@ -5,6 +5,9 @@ adresi içerebildiği için ağ hataları burada yakalanır ve token'sız bir me
 fırlatılır; token hiçbir günlüğe yazılmaz.
 """
 
+import html
+import re
+from functools import partial
 from typing import Any, Protocol
 
 import httpx
@@ -54,13 +57,20 @@ class TelegramAPI:
 
     def mesaj_gonder(self, chat_id: int, metin: str) -> None:
         for parca in mesaji_bol(metin):
-            self._cagir(
+            gonder = partial(
+                self._cagir,
                 "sendMessage",
                 chat_id=chat_id,
-                text=parca,
-                parse_mode="HTML",
                 link_preview_options={"is_disabled": True},
             )
+            try:
+                gonder(text=parca, parse_mode="HTML")
+            except TelegramHatasi as hata:
+                # Biçim bozuksa (ör. bölme bir etiketi ikiye ayırdıysa) Telegram mesajı hiç
+                # göndermez; cevap kaybolmasın diye etiketsiz düz metin olarak gönderilir.
+                if "can't parse entities" not in str(hata):
+                    raise
+                gonder(text=duz_metin(parca))
 
     def yaziyor(self, chat_id: int) -> None:
         self._cagir("sendChatAction", chat_id=chat_id, action="typing")
@@ -76,6 +86,11 @@ class TelegramAPI:
         if cevap.status_code != 200 or len(cevap.content) > en_fazla_bayt:
             raise TelegramHatasi(f"dosya: indirilemedi (HTTP {cevap.status_code})")
         return cevap.content
+
+
+def duz_metin(html_metin: str) -> str:
+    """Telegram HTML'inden etiketleri atar ve kaçırılmış karakterleri geri çevirir."""
+    return html.unescape(re.sub(r"</?[a-z]+>", "", html_metin))
 
 
 def mesaji_bol(metin: str, sinir: int = MESAJ_SINIRI) -> list[str]:

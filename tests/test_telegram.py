@@ -2,17 +2,20 @@
 komutlar ve Bot API istemcisi. Gerçek Telegram'a bağlanılmaz; sahte bir istemci kullanılır."""
 
 import json
+import re
 from datetime import datetime, timedelta
 
 import httpx
 import openai
 import psycopg
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from app import sorgular
 from app import telegram_bot as tb
 from app.db import TZ
-from app.telegram_api import MESAJ_SINIRI, TelegramAPI, TelegramHatasi, mesaji_bol
+from app.telegram_api import MESAJ_SINIRI, TelegramAPI, TelegramHatasi, duz_metin, mesaji_bol
 from tests.conftest import OPERATOR, SABIT_AN, SahteEmbedder, yetki
 from tests.test_agent import SenaryoluLLM, arac_iste, arac_sonuclari, cevap_ver
 
@@ -185,6 +188,15 @@ def test_baska_kullanicinin_kodu_ustune_yazilmaz(conn, monkeypatch):
     assert sahibi == "bakim"
 
 
+def test_silinmis_kullanicinin_koduyla_baglanilmaz(ortam, conn):
+    """Kod alındıktan sonra kullanıcı silinirse sahipsiz bağlantı kalmamalı."""
+    kod = tb.kod_uret(conn, "silinen-kullanici", simdi=SABIT_AN)
+    ortam.bot().guncellemeyi_isle(guncelleme(YABANCI, f"/baglan {kod}"))
+    assert "geçersiz" in ortam.api.son(YABANCI)
+    sayi = conn.execute("SELECT count(*) FROM telegram_baglantilari WHERE chat_id = %s", [YABANCI])
+    assert sayi.fetchone()[0] == 0
+
+
 def test_yeni_sohbete_baglaninca_eski_sohbet_duser(ortam):
     bot = ortam.bot()
     ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
@@ -280,6 +292,19 @@ def test_soru_siniri(ortam):
     assert ortam.api.son(BAKIM_SOHBETI) == "tamam"
 
 
+def test_sinir_penceresi_gecen_sohbetler_bellekten_atilir(ortam):
+    bot = ortam.bot()
+    ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
+    ortam.llm = SenaryoluLLM(cevap_ver("tamam"))
+    bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, "soru"))
+    bot.guncellemeyi_isle(guncelleme(YABANCI, "/baglan 000000"))
+    bot.eski_verileri_temizle()
+    assert set(bot._sorular) == {BAKIM_SOHBETI} and set(bot._yanlis_kodlar) == {YABANCI}
+    ortam.saat.an += tb.KOD_GECERLILIK.total_seconds() + 1
+    bot.eski_verileri_temizle()
+    assert not bot._sorular and not bot._yanlis_kodlar
+
+
 def test_llm_yoksa_ya_da_hata_verirse_anlasilir_mesaj(ortam, conn):
     bot = ortam.bot()
     ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
@@ -336,20 +361,21 @@ def test_talep_acilmazsa_fotograf_saklanmaz(ortam, conn):
 
 
 @pytest.mark.parametrize(
-    ("foto", "aciklama", "beklenen"),
+    ("foto", "aciklama", "beklenen", "llm_var"),
     [
-        (FOTO, None, "altına makine kodunu"),
-        ([{"file_id": "dev", "file_size": tb.EN_BUYUK_FOTOGRAF + 1}], "P3-HP", "çok büyük"),
+        (FOTO, None, "altına makine kodunu", True),
+        ([{"file_id": "dev", "file_size": tb.EN_BUYUK_FOTOGRAF + 1}], "P3-HP", "çok büyük", True),
+        (FOTO, "P3-HP'de kaçak", "ayarlı değil", False),  # LLM yokken boşuna indirilmez
     ],
-    ids=["aciklamasiz", "buyuk"],
+    ids=["aciklamasiz", "buyuk", "llm-yok"],
 )
-def test_fotograf_kurallari(ortam, foto, aciklama, beklenen):
+def test_fotograf_kurallari(ortam, foto, aciklama, beklenen, llm_var):
     bot = ortam.bot()
     ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
-    llm = ortam.llm = SenaryoluLLM(cevap_ver("-"))
+    llm = ortam.llm = SenaryoluLLM(cevap_ver("-")) if llm_var else None
     bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, foto=foto, aciklama=aciklama))
     assert beklenen in ortam.api.son(BAKIM_SOHBETI)
-    assert ortam.api.indirilen == [] and llm.gelen_mesajlar == []
+    assert ortam.api.indirilen == [] and (llm is None or llm.gelen_mesajlar == [])
 
 
 # --- Arıza bildirimi ------------------------------------------------------------------------
@@ -361,13 +387,13 @@ def yeni_ariza(conn):
     seed'le karşılaştırıyor)."""
     eklenenler = []
 
-    def ekle(makine="P3-HP", tip="hidrolik", hat_durdu=True):
+    def ekle(makine="P3-HP", tip="hidrolik", hat_durdu=True, acik=False):
         (ariza_id,) = conn.execute(
             "INSERT INTO ariza_kayitlari (makine_id, baslangic, bitis, ariza_tipi, onem, "
             "hat_durdu, aciklama) SELECT id, %s, %s, %s, 'yuksek', %s, "
             "'Hidrolik basınç set değerinin altına düştü' FROM makineler WHERE kod = %s "
             "RETURNING id",
-            [SABIT_AN, SABIT_AN + timedelta(minutes=5), tip, hat_durdu, makine],
+            [SABIT_AN, None if acik else SABIT_AN + timedelta(minutes=5), tip, hat_durdu, makine],
         ).fetchone()
         eklenenler.append(ariza_id)
         return ariza_id
@@ -418,6 +444,49 @@ def test_hatti_durdurmayan_arizada_ve_engelleyende(ortam, yeni_ariza):
     assert "Kaynak 1 durdu" in ortam.api.son(OPERATOR_SOHBETI)
 
 
+class AradaEkleyen:
+    """Bağlantı vekili: en büyük arıza id'si okunduktan hemen sonra bir arıza ekler (MES'in
+    botun iki sorgusu arasına yazması)."""
+
+    def __init__(self, conn, ekle):
+        self._conn, self._ekle = conn, ekle
+
+    def execute(self, sorgu, *args):
+        sonuc = self._conn.execute(sorgu, *args)
+        if "max(id)" in sorgu and self._ekle:
+            self._ekle()
+            self._ekle = None
+        return sonuc
+
+    def __getattr__(self, ad):
+        return getattr(self._conn, ad)
+
+
+def test_sorgular_arasinda_eklenen_ariza_bir_kez_bildirilir(ortam, conn, yeni_ariza):
+    bot = ortam.bot()
+    ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
+    bot.bildirimleri_gonder()
+    yeni_ariza()
+    bot.conn = AradaEkleyen(conn, lambda: yeni_ariza(makine="K1-KR1", tip="yazilim"))
+    assert bot.bildirimleri_gonder() == 1  # okunan en büyük id'ye kadar olanlar
+    bot.conn = conn
+    assert bot.bildirimleri_gonder() == 1  # aradaki arıza bir sonraki turda
+    assert bot.bildirimleri_gonder() == 0
+    assert sum("durdu" in m for m in ortam.api.mesajlar(BAKIM_SOHBETI)) == 2
+
+
+def test_sonradan_hatti_durduran_ariza_bildirilir(ortam, conn, yeni_ariza):
+    bot = ortam.bot()
+    ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
+    bot.bildirimleri_gonder()
+    ariza = yeni_ariza(hat_durdu=False, acik=True)
+    assert bot.bildirimleri_gonder() == 0
+    conn.execute("UPDATE ariza_kayitlari SET hat_durdu = true WHERE id = %s", [ariza])
+    assert bot.bildirimleri_gonder() == 1
+    assert "Pres 3 durdu" in ortam.api.son(BAKIM_SOHBETI)
+    assert bot.bildirimleri_gonder() == 0  # bir kez
+
+
 def test_seed_yeniden_kurulunca_eski_arizalar_bildirilmez(ortam, conn):
     bot = ortam.bot()
     ortam.bagla(bot, "bakim", BAKIM_SOHBETI)
@@ -440,11 +509,14 @@ def test_komutlar(ortam):
     bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, "/oee pres 3"))
     assert "Pres 3, son 7 gün" in ortam.api.son(BAKIM_SOHBETI)
     bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, "/oee Pres 9"))
-    assert "adında hat yok" in ortam.api.son(BAKIM_SOHBETI)
+    assert "adında bir hat yok" in ortam.api.son(BAKIM_SOHBETI)
 
     bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, "/plan 12"))
     plan = ortam.api.son(BAKIM_SOHBETI)
     assert "(12 saat)" in plan and "P3-HP" in plan and "tamirden sonra" in plan
+    for arguman in ("²", "500", "0", "-3", "on"):  # "²".isdigit() True ama int("²") hata verir
+        bot.guncellemeyi_isle(guncelleme(BAKIM_SOHBETI, f"/plan {arguman}"))
+        assert "(16 saat)" in ortam.api.son(BAKIM_SOHBETI)
     bot.guncellemeyi_isle(guncelleme(OPERATOR_SOHBETI, "/plan"))
     assert "yalnızca bakım" in ortam.api.son(OPERATOR_SOHBETI)
     bot.guncellemeyi_isle(guncelleme(OPERATOR_SOHBETI, "/yardim"))
@@ -474,10 +546,42 @@ def test_komutlar(ortam):
         ("2 * 3 = 6", "2 * 3 = 6"),
         ("a < b & c > d", "a &lt; b &amp; c &gt; d"),
         ('<b onmouseover="x">', '&lt;b onmouseover="x"&gt;'),
+        ("**a *b* c**", "<b>a <i>b</i> c</b>"),
+        ("**a `b** c`", "**a <code>b** c</code>"),  # kodun içi biçimlenmez
+        ("**P3-HP *önemli** durum*", "<b>P3-HP *önemli</b> durum*"),  # çakışan italik atlanır
+        ("## **Başlık**", "<b>Başlık</b>"),
+        ("`*x*` ve *y*", "<code>*x*</code> ve <i>y</i>"),
     ],
 )
 def test_telegram_html(girdi, beklenen):
     assert tb.telegram_html(girdi) == beklenen
+
+
+def _ic_ice_dogru(metin: str) -> bool:
+    """Etiketler doğru iç içe mi, code'un içinde etiket var mı (Telegram ikisini de reddeder)."""
+    yigin: list[str] = []
+    for kapanis, ad in re.findall(r"<(/?)([a-z]+)>", metin):
+        if kapanis:
+            if not yigin or yigin.pop() != ad:
+                return False
+        elif "code" in yigin:
+            return False
+        else:
+            yigin.append(ad)
+    return not yigin
+
+
+# Tek tek karakterden değil Markdown parçalarından: "**a *b** c*" gibi çakışan işaretler
+# rastgele karakterlerle 100 denemede nadiren çıkıyor.
+MARKDOWN_PARCALARI = ["**", "*", "`", "a", "b", " ", "\n", "# ", "- ", "  - ", "<", "&", "\ue000"]
+
+
+@given(st.lists(st.sampled_from(MARKDOWN_PARCALARI), max_size=25).map("".join))
+def test_telegram_html_her_zaman_gecerli(metin):
+    cikti = tb.telegram_html(metin)
+    assert _ic_ice_dogru(cikti)
+    assert not re.search(r"[<>]", re.sub(r"</?(?:b|i|code)>", "", cikti))  # başka etiket yok
+    assert "\ue000" not in cikti
 
 
 def test_mesaj_sinira_gore_bolunur():
@@ -509,6 +613,23 @@ def test_api_istekleri_ve_bolme():
     yollar = [y for y, _ in istekler]
     assert yollar[0].endswith("/getMe") and yollar.count(f"/bot{TOKEN}/sendMessage") == 2
     assert all(g["parse_mode"] == "HTML" for y, g in istekler if y.endswith("sendMessage"))
+
+
+def test_api_bicim_reddedilirse_duz_metin_gonderir():
+    gonderilen = []
+
+    def isleyici(istek: httpx.Request):
+        govde = json.loads(istek.content)
+        gonderilen.append(govde)
+        if govde.get("parse_mode") == "HTML":
+            aciklama = "Bad Request: can't parse entities: unexpected end tag"
+            return httpx.Response(400, json={"ok": False, "description": aciklama})
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    _api(isleyici).mesaj_gonder(5, "<b>a <i>b</b> c</i> &lt;d&gt;")
+    assert [g.get("parse_mode") for g in gonderilen] == ["HTML", None]
+    assert gonderilen[1]["text"] == "a b c <d>"
+    assert duz_metin("<code>x &amp; y</code>") == "x & y"
 
 
 def test_api_hatalarinda_token_sizmaz():
@@ -559,15 +680,29 @@ def test_dongu_hatali_mesajda_durmaz_ve_gunluge_icerik_yazmaz(capsys):
                 raise ValueError(g["message"]["text"])
             self.islenen.append(g["update_id"])
 
+        def islenemedi(self, g):
+            self.islenen.append(-g["update_id"])
+
         def bildirimleri_gonder(self):
-            return 0
+            raise psycopg.OperationalError("GIZLI-ICERIK-2")
 
     bot = Bot()
+    # Bildirim hata verse de offset döner: işlenen mesajlar ikinci kez işlenmez.
     assert calistirici.tur(Api(), bot, None) == 9  # hatalı mesaj tekrar alınmaz
-    assert bot.islenen == [8]  # sonraki mesaj yine işlenir
+    assert bot.islenen == [-7, 8]  # kullanıcıya söylenir, sonraki mesaj yine işlenir
     cikti = capsys.readouterr()
     assert "GIZLI-ICERIK" not in cikti.out + cikti.err
     assert "mesaj 7 işlenemedi: ValueError (test_telegram.py:" in cikti.out
+    assert "bildirimler gönderilemedi: OperationalError" in cikti.out
+
+
+def test_islenemeyen_mesajda_kullaniciya_haber_verilir(ortam):
+    bot = ortam.bot()
+    bot.islenemedi(guncelleme(YABANCI, "x"))
+    bot.islenemedi(guncelleme(-500, "x", tip="group"))  # gruplara yazılmaz
+    ortam.api.engelleyen.add(OPERATOR_SOHBETI)
+    bot.islenemedi(guncelleme(OPERATOR_SOHBETI, "x"))  # gönderilemese de hata fırlatmaz
+    assert ortam.api.giden == [(YABANCI, "Mesajınız işlenemedi; biraz sonra tekrar deneyin.")]
 
 
 # --- Web uç noktaları ------------------------------------------------------------------------

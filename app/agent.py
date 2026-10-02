@@ -3,7 +3,7 @@
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -22,8 +22,10 @@ Sen Andon'sun: bir fabrikada bakım ekibine ve operatörlere yardım eden asista
 Fabrikada Pres 1-3, Kaynak 1-2, Montaj 1 ve Boya 1 hatları var. Vardiyalar: 1. vardiya
 07-15, 2. vardiya 15-23, 3. (gece) vardiyası 23-07.
 
-Şu an: {simdi}. "Geçen ay", "bu hafta", "dün" gibi ifadeleri bu tarihe göre somut bir tarih
-aralığına çevir. Örneğin geçen ay, bir önceki takvim ayının ilk ve son günüdür.
+Şu an: {simdi}. Sık kullanılan tarih aralıkları hazır hesaplandı; bu ifadeler geçerse
+tarihleri aşağıdan aynen al, kendin hesaplama:
+{araliklar}
+Listede olmayan ifadeleri (ör. "mart ayı", "son 3 gün") bugünün tarihine göre çevir.
 
 Konuştuğun kişi: {ad_soyad} ({rol_adi}).{rol_notu}
 
@@ -75,20 +77,45 @@ OPERATOR_NOTU = (
 )
 
 
+def tarih_araliklari(bugun: date) -> dict[str, tuple[date, date]]:
+    """Sistem istemine hazır verilen aralıklar (iki uç dahil). Model tarih aritmetiğini kendi
+    yaptığında yılı ya da ay sonunu şaşırabiliyordu (provada 2026 yerine 2025)."""
+    hafta_basi = bugun - timedelta(days=bugun.weekday())
+    ay_basi = bugun.replace(day=1)
+    gecen_ay_sonu = ay_basi - timedelta(days=1)
+    return {
+        "bugün": (bugun, bugun),
+        "dün": (bugun - timedelta(days=1), bugun - timedelta(days=1)),
+        "bu hafta": (hafta_basi, bugun),
+        "geçen hafta": (hafta_basi - timedelta(days=7), hafta_basi - timedelta(days=1)),
+        "son 7 gün": (bugun - timedelta(days=6), bugun),
+        "son 30 gün": (bugun - timedelta(days=29), bugun),
+        "bu ay": (ay_basi, bugun),
+        "geçen ay": (gecen_ay_sonu.replace(day=1), gecen_ay_sonu),
+        "bu yıl": (bugun.replace(month=1, day=1), bugun),
+    }
+
+
 def sistem_istemi(simdi: datetime, kullanici: Kullanici) -> str:
+    araliklar = "\n".join(
+        f"- {ad}: {bas} - {bit}" if bas != bit else f"- {ad}: {bas}"
+        for ad, (bas, bit) in tarih_araliklari(simdi.astimezone(TZ).date()).items()
+    )
     return SISTEM_ISTEMI.format(
         simdi=f"{simdi:%Y-%m-%d %H:%M}, {GUNLER[simdi.weekday()]}",
+        araliklar=araliklar,
         ad_soyad=kullanici.ad_soyad,
         rol_adi=ROL_ADLARI[kullanici.rol],
         rol_notu=OPERATOR_NOTU if kullanici.rol == "operator" else "",
     )
 
 
-def sohbet(soru: str, llm: LLM, baglam: AracBaglami, simdi: datetime | None = None) -> SohbetSonucu:
-    """Soruyu cevaplar. Döngü bir hatayla yarıda kalırsa SohbetHatasi fırlatır."""
+def sohbet(soru: str, llm: LLM, baglam: AracBaglami) -> SohbetSonucu:
+    """Soruyu cevaplar. Döngü bir hatayla yarıda kalırsa SohbetHatasi fırlatır. "Şu an"
+    bağlamdan gelir; araçlar da aynı anı kullanır."""
     baslangic = time.perf_counter()
     mesajlar: list[dict] = [
-        {"role": "system", "content": sistem_istemi(simdi or datetime.now(TZ), baglam.kullanici)},
+        {"role": "system", "content": sistem_istemi(baglam.simdi, baglam.kullanici)},
         {"role": "user", "content": soru},
     ]
     sonuc = SohbetSonucu(

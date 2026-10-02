@@ -105,8 +105,10 @@ def test_ara_operatore_bakim_dokumani_dondurmez(istemci):
 def test_agent_araci_rol_yetkisine_uyar(test_veritabani, kullanici, gorebilir):
     llm = SenaryoluLLM(arac_iste(("dokuman_ara", {"soru": BAKIM_SORUSU, "k": 5})), cevap_ver("-"))
     with psycopg.connect(test_veritabani, autocommit=True) as conn:
-        baglam = AracBaglami(conn=conn, embedder=SahteEmbedder(), kullanici=kullanici)
-        sonuc = sohbet("valf bobini", llm, baglam, simdi=SABIT_AN)
+        baglam = AracBaglami(
+            conn=conn, embedder=SahteEmbedder(), kullanici=kullanici, simdi=SABIT_AN
+        )
+        sonuc = sohbet("valf bobini", llm, baglam)
 
     (arac_sonucu,) = arac_sonuclari(llm)
     gorulen = {p["dokuman_kodu"] for p in arac_sonucu["sonuc"]}

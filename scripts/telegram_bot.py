@@ -41,23 +41,33 @@ def gunluk(mesaj: str) -> None:
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {mesaj}", flush=True)
 
 
+def hatayi_yaz(ne: str, hata: Exception) -> None:
+    """Hata mesajı kullanıcının yazdığını içerebilir (ör. veritabanı hatası); günlüğe yalnızca
+    hata türü ve kodun neresinde olduğu yazılır."""
+    yer = traceback.extract_tb(hata.__traceback__)[-1]
+    gunluk(f"{ne}: {type(hata).__name__} ({os.path.basename(yer.filename)}:{yer.lineno})")
+
+
 def tur(api: TelegramAPI, bot: Bot, offset: int | None) -> int | None:
-    """Bir döngü turu: mesajları işle, bildirimleri gönder. Yeni offset'i döner."""
+    """Bir döngü turu: mesajları işle, bildirimleri gönder. Yeni offset'i döner.
+
+    Yalnızca getUpdates'in hatası dışarı çıkar. İşlenen bir mesajdan ya da bildirimden sonra
+    çıkan hata yeni offset'i kaybettirseydi aynı mesajlar tekrar işlenir, talepler iki kez
+    açılırdı. Veritabanı bağlantısı koptuysa ana döngü bunu `conn.closed`'dan anlar."""
     for guncelleme in api.guncellemeler(offset, ZAMAN_ASIMI):
         offset = guncelleme["update_id"] + 1  # işlenemese bile tekrar alınmasın
         try:
             bot.guncellemeyi_isle(guncelleme)
         except Exception as hata:  # tek bir mesaj botu düşürmesin
-            # Hata mesajı kullanıcının yazdığını içerebilir (ör. veritabanı hatası); günlüğe
-            # yalnızca hata türü ve kodun neresinde olduğu yazılır.
-            yer = traceback.extract_tb(hata.__traceback__)[-1]
-            gunluk(
-                f"mesaj {guncelleme['update_id']} işlenemedi: {type(hata).__name__} "
-                f"({os.path.basename(yer.filename)}:{yer.lineno})"
-            )
-    gonderilen = bot.bildirimleri_gonder()
-    if gonderilen:
-        gunluk(f"{gonderilen} arıza bildirimi gönderildi")
+            hatayi_yaz(f"mesaj {guncelleme['update_id']} işlenemedi", hata)
+            bot.islenemedi(guncelleme)
+    try:
+        gonderilen = bot.bildirimleri_gonder()
+    except Exception as hata:
+        hatayi_yaz("bildirimler gönderilemedi", hata)
+    else:
+        if gonderilen:
+            gunluk(f"{gonderilen} arıza bildirimi gönderildi")
     return offset
 
 
@@ -91,6 +101,11 @@ def main() -> None:
     offset, son_temizlik = None, 0.0
     while True:
         try:
+            if bot.conn.closed:
+                # Veritabanı dönene kadar mesaj alınmaz; alınsa hepsi hata verip kaybolurdu.
+                bot.conn = baglan()
+                bot.conn.autocommit = True
+                gunluk("veritabanına yeniden bağlanıldı")
             offset = tur(api, bot, offset)
             if time.monotonic() - son_temizlik > TEMIZLIK_ARALIGI:
                 kod, foto = bot.eski_verileri_temizle()
@@ -101,10 +116,11 @@ def main() -> None:
             gunluk(f"Telegram hatası: {hata}; 5 sn sonra tekrar")
             time.sleep(5)
         except psycopg.OperationalError:
-            gunluk("veritabanı bağlantısı koptu; 5 sn sonra yeniden bağlanılıyor")
+            # Yeniden bağlanma da başarısız olabilir; süreç çökmeden 5 sn sonra tekrar denenir.
+            gunluk("veritabanına ulaşılamıyor; 5 sn sonra tekrar denenecek")
+            if not bot.conn.closed:
+                bot.conn.close()
             time.sleep(5)
-            bot.conn = conn = baglan()
-            conn.autocommit = True
 
 
 if __name__ == "__main__":

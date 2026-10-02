@@ -144,9 +144,8 @@ def hatlar(conn: Baglanti, _: AktifKullanici):
 
 
 def _hat_dogrula(conn: psycopg.Connection, hat: str | None) -> None:
-    if hat is not None and sorgular.hat_adini_bul(conn, hat) is None:
-        gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(conn))
-        raise HTTPException(404, f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}")
+    if hata := sorgular.hat_hatasi(conn, hat):
+        raise HTTPException(404, hata)
 
 
 @router.get(

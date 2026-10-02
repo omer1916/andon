@@ -39,6 +39,14 @@ def hat_adini_bul(conn: psycopg.Connection, ad: str) -> str | None:
     return satir[0] if satir else None
 
 
+def hat_hatasi(conn: psycopg.Connection, hat: str | None) -> str | None:
+    """Hat verilmiş ama yoksa geçerli hatları sayan hata mesajı; API, agent ve bot ortak."""
+    if hat is None or hat_adini_bul(conn, hat) is not None:
+        return None
+    gecerli = ", ".join(h["ad"] for h in hatlari_getir(conn))
+    return f"'{hat}' adında bir hat yok. Geçerli hatlar: {gecerli}"
+
+
 def _ariza_kaynagi(
     hat: str | None, baslangic: date | None, bitis: date | None, ariza_tipi: str | None
 ) -> tuple[sql.Composed, dict]:

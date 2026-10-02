@@ -93,7 +93,7 @@ def rapor_verisi(conn: psycopg.Connection, baslangic: datetime) -> dict:
     }
 
 
-def _durus_adi(durus: dict) -> str:
+def durus_adi(durus: dict) -> str:
     return DURUS_ADLARI.get(durus["neden"]) or f"arıza ({durus['ariza_tipi']})"
 
 
@@ -127,12 +127,16 @@ def llm_verisi(v: dict) -> dict:
         "en_uzun_duruslar": [
             {
                 "hat": d["hat"],
-                "neden": _durus_adi(d),
+                "neden": durus_adi(d),
                 "makine": d["makine_kodu"],
                 "sure_dk": d["sure_dk"],
             }
             for d in v["duruslar"]
         ],
+        # Sayımlar açıkça verilir: model (ya da kural yorumu) "3 arıza başladı" yazdığında
+        # sayı denetimi bunu başka bir alanda tesadüfen geçen bir 3'e değil, buraya dayandırır.
+        "vardiyada_baslayan_ariza_sayisi": len(v["arizalar"]),
+        "hatti_durduran_ariza_sayisi": sum(a["hat_durdu"] for a in v["arizalar"]),
         "vardiyada_baslayan_arizalar": [
             {
                 "makine": a["makine_kodu"],
@@ -269,7 +273,7 @@ def llm_yorumu(llm: LLM, veri: dict) -> YorumSonucu:
     return sonuc
 
 
-def _yuzde_metni(oran: float | None) -> str:
+def yuzde_metni(oran: float | None) -> str:
     return "–" if oran is None else f"%{oran * 100:.1f}".replace(".", ",")
 
 
@@ -279,14 +283,14 @@ def _dk_metni(dakika: int) -> str:
 
 def kural_yorumu(v: dict) -> RaporYorumu:
     """LLM kullanılamadığında aynı verilerden kurallarla yazılan yorum."""
-    cumleler = [f"Vardiyada fabrika OEE'si {_yuzde_metni(v['fabrika']['oee'])}."]
+    cumleler = [f"Vardiyada fabrika OEE'si {yuzde_metni(v['fabrika']['oee'])}."]
     if v["hatlar"]:
         en_dusuk = v["hatlar"][0]
-        cumleler.append(f"En düşük hat {en_dusuk['hat']} ({_yuzde_metni(en_dusuk['oee'])}).")
+        cumleler.append(f"En düşük hat {en_dusuk['hat']} ({yuzde_metni(en_dusuk['oee'])}).")
     if v["duruslar"]:
         d = v["duruslar"][0]
         cumleler.append(
-            f"En uzun duruş {d['hat']} hattında, {_durus_adi(d)}: {_dk_metni(d['sure_dk'])}."
+            f"En uzun duruş {d['hat']} hattında, {durus_adi(d)}: {_dk_metni(d['sure_dk'])}."
         )
     if v["arizalar"]:
         durduran = sum(a["hat_durdu"] for a in v["arizalar"])
@@ -300,8 +304,8 @@ def kural_yorumu(v: dict) -> RaporYorumu:
     for h in v["hatlar"]:
         if h["oee"] is not None and h["oee"] < DUSUK_OEE:
             yedi_gun = h["son_7_gun_oee"]
-            ek = f" (son 7 gün {_yuzde_metni(yedi_gun)})" if yedi_gun is not None else ""
-            dikkat.append(f"{h['hat']}: OEE {_yuzde_metni(h['oee'])}{ek}.")
+            ek = f" (son 7 gün {yuzde_metni(yedi_gun)})" if yedi_gun is not None else ""
+            dikkat.append(f"{h['hat']}: OEE {yuzde_metni(h['oee'])}{ek}.")
     for a in v["arizalar"]:
         if a["vardiya_sonunda_suruyor"]:
             dikkat.append(
@@ -342,9 +346,9 @@ def markdown(r: dict) -> str:
         f"# Vardiya raporu: {r['tarih']:%d.%m.%Y}, {r['vardiya']}. vardiya "
         f"({_saat_araligi(r['vardiya'])})",
         "",
-        f"**Fabrika OEE: {_yuzde_metni(f['oee'])}** (kullanılabilirlik "
-        f"{_yuzde_metni(f['kullanilabilirlik'])}, performans {_yuzde_metni(f['performans'])}, "
-        f"kalite {_yuzde_metni(f['kalite'])})",
+        f"**Fabrika OEE: {yuzde_metni(f['oee'])}** (kullanılabilirlik "
+        f"{yuzde_metni(f['kullanilabilirlik'])}, performans {yuzde_metni(f['performans'])}, "
+        f"kalite {yuzde_metni(f['kalite'])})",
         "",
         "## Özet",
         "",
@@ -361,16 +365,16 @@ def markdown(r: dict) -> str:
     satirlar.append("|---|---|---|---|---|---|---|")
     for h in r["hatlar"]:
         satirlar.append(
-            f"| {h['hat']} | {_yuzde_metni(h['oee'])} | {_yuzde_metni(h['kullanilabilirlik'])} "
-            f"| {_yuzde_metni(h['performans'])} | {_yuzde_metni(h['kalite'])} "
-            f"| {_dk_metni(h['durus_dk'])} | {_yuzde_metni(h['son_7_gun_oee'])} |"
+            f"| {h['hat']} | {yuzde_metni(h['oee'])} | {yuzde_metni(h['kullanilabilirlik'])} "
+            f"| {yuzde_metni(h['performans'])} | {yuzde_metni(h['kalite'])} "
+            f"| {_dk_metni(h['durus_dk'])} | {yuzde_metni(h['son_7_gun_oee'])} |"
         )
 
     if r["duruslar"]:
         satirlar += ["", "## En uzun duruşlar", ""]
         for d in r["duruslar"]:
             makine = f" ({d['makine_kodu']})" if d["makine_kodu"] else ""
-            satirlar.append(f"- {d['hat']}: {_durus_adi(d)}{makine}, {_dk_metni(d['sure_dk'])}")
+            satirlar.append(f"- {d['hat']}: {durus_adi(d)}{makine}, {_dk_metni(d['sure_dk'])}")
 
     satirlar += ["", "## Vardiyada başlayan arızalar", ""]
     for a in r["arizalar"]:

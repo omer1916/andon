@@ -90,7 +90,7 @@ http://localhost:8000/docs adresindedir.
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
 | Telegram | Bot API, httpx ile ince istemci, uzun yoklama (dışarıya açık adres gerekmez) |
-| Kalite | pytest (2551 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2574 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Telegram botu
@@ -138,7 +138,9 @@ bota giden mesajları yazdırır. Gerçek Telegram'a istek gitmez. Token bir par
 6. Bildirimi denemek için hattı durduran bir arıza ekle:
    ```bash
    python scripts/ariza_ekle.py            # P3-HP, hidrolik, yüksek önem
+   python scripts/ariza_ekle.py --bitir 4321   # demodan sonra: betiğin yazdığı numarayla
    ```
+   Bitirilmeyen arıza sürüyor sayılır; makine planda ve raporda "şu an arızalı" görünür.
 
 ### Veri gizliliği
 
@@ -192,7 +194,15 @@ görüş değildir):
 - Uzun yoklama: Telegram'dan en fazla 10 saniye yeni mesaj beklenir, sonra yeni arızalara
   bakılır. Webhook gerekmez, uygulama dışarıya açılmaz.
 - Bildirilen son arıza bellekte tutulur. Bot kapalıyken başlayan arızalar bildirilmez; seed
-  yeniden çalışıp arıza numaraları küçülürse eski arızalar yeniden bildirilmez.
+  yeniden çalışıp arıza numaraları küçülürse eski arızalar yeniden bildirilmez. Her arıza en
+  fazla bir kez bildirilir. MES bir arızayı önce "hattı durdurmadı" diye yazıp sonra
+  güncellerse, arıza sürdüğü sürece izlenir ve güncellendiği turda bildirilir.
+- Bir mesaj ya da bildirim hata verirse bot durmaz ve aynı mesajı ikinci kez işlemez;
+  kullanıcıya "işlenemedi" denir. Veritabanı koparsa bot mesaj almayı bırakır, 5 saniyede bir
+  yeniden bağlanmayı dener, çökmez.
+- Telegram biçimi bozuk HTML'i reddeder ve mesajı hiç göndermez. Agent'ın Markdown'ı her zaman
+  doğru iç içe geçen etiketlere çevrilir (Hypothesis ile denenir); yine de reddedilirse mesaj
+  düz metin olarak gönderilir.
 - Eşleştirme tabloları seed'de silinmez (`sql/telegram.sql`, `IF NOT EXISTS`); kullanıcılar
   yeniden oluşturulsa da bağlantılar kalır.
 
@@ -201,15 +211,38 @@ Gemini kullanılarak yapılan uçtan uca prova, birim testlerinin göremediği i
 
 1. *Model yanlış yılı yazdı.* "Son 7 günde kaç arıza oldu?" sorusunda, sistem isteminde bugünün
    tarihi (2026) olduğu hâlde Gemini `ariza_say`'ı 2025 tarihleriyle çağırdı ve "hiç arıza
-   yok" dedi. Artık sonuç sıfırsa ve aralık arıza kayıtlarının tamamen dışındaysa araç sıfır
-   yerine düzeltilebilir bir hata döner ("arıza kayıtları 2026-04-03 ile 2026-10-02 arasında,
-   özellikle yılı kontrol et"); model aralığı düzeltip yeniden sorar. Veri aralığı içinde
-   gerçekten arıza olmayan bir dönem için cevap yine "0" olur.
+   yok" dedi. Kök neden: tarih aritmetiği modele bırakılmıştı. Artık sistem istemi "bugün, dün,
+   bu hafta, geçen hafta, son 7 gün, son 30 gün, bu ay, geçen ay, bu yıl" aralıklarını hazır
+   tarihlerle verir; sonraki provada model aralığı ilk denemede doğru kullandı. Son güvenlik
+   olarak, sonuç sıfırsa ve aralık arıza kayıtlarının başlangıcından önceyse ya da gelecekteyse
+   araç sıfır yerine düzeltilebilir bir hata döner ("bugün 2026-10-02 ... özellikle yılı kontrol
+   et"). Bugün henüz arıza olmadıysa cevap hata değil "0"dır.
 2. *Tırnak kaçırma.* Telegram'a giden raporda "OEE&amp;#x27;si" göründü: `html.escape`
    tırnakları da kaçırıyordu. Telegram HTML'i yalnızca `<`, `>`, `&` ister.
 
 Birim testleri ikisini de görmüyordu: sahte LLM tarihi her zaman doğru yazıyor, testler de
 mesajı kendi kaçırma kuralıyla karşılaştırıyordu. Her ikisi için de artık test var.
+
+**Kod incelemesinin yakaladıkları.** Telegram, rapor ve bakım planı değişikliklerinin kod
+incelemesi, testlerin geçtiği hâlde şu hataları buldu:
+
+- *Çift bildirim:* Bot en büyük arıza numarasını okuduktan hemen sonra MES yeni bir arıza
+  yazarsa o arıza iki turda da bildiriliyordu. Sorgu artık okunan numarayla sınırlı.
+- *Tekrar işlenen mesajlar:* Mesajlar işlendikten sonra bildirim adımı hata verirse yeni
+  konum (offset) kayboluyor, aynı mesajlar yeniden işleniyor ve bakım talebi iki kez
+  açılıyordu.
+- *Kaybolan cevap:* `**a *b** c*` gibi çakışan işaretler yanlış iç içe HTML üretiyor, Telegram
+  mesajı reddediyor, kullanıcı hiç cevap almıyordu.
+- *Yanlış hata:* "Bugün kaç arıza oldu?" sorusu, bugün henüz arıza yoksa "yılı kontrol et"
+  hatasına düşüyordu.
+- *Küçük olanlar:* `/plan ²` komutu botu hatayla düşürüyordu (`"²".isdigit()` doğru, `int("²")`
+  hata); kodu aldıktan sonra silinen bir kullanıcıya sahipsiz bağlantı kalıyordu; LLM ayarlı
+  değilken fotoğraf boşuna indiriliyordu; vardiya raporunda arıza sayıları denetimden yalnızca
+  başka bir alanda aynı sayı tesadüfen geçtiği için geçiyordu.
+
+Her biri için test yazıldı ve düzeltme geri alınınca testin kırıldığı tek tek denendi (12
+mutasyonun 12'si yakalandı; çakışan işaretleri ilk denemede yakalayamayan Hypothesis testi,
+rastgele karakter yerine Markdown parçalarından metin üretecek şekilde güçlendirildi).
 
 ## Tasarım kararları
 
@@ -438,7 +471,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2551 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2574 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -452,17 +485,17 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
 | `test_guvenlik_matrisi` | 269 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
-| `test_telegram` | 45 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, rol (operatöre bakım kılavuzu yok), HTML kaçırma, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, engelleyen kullanıcı, komutlar, saklama süresi, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
+| `test_telegram` | 58 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, silinmiş kullanıcı, rol (operatöre bakım kılavuzu yok), HTML kaçırma ve her girdide doğru iç içe etiket (Hypothesis), düz metne dönüş, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, iki sorgu arasına yazılan ve sonradan hattı durduran arıza, engelleyen kullanıcı, komutlar, saklama süresi, hata sonrası offset, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
 | `test_bakim_plani` | 341 | Weibull MLE'nin bilinen parametreleri bulması ve SciPy ile aynı olması, sansürün etkisi, olabilirlik oranı testinin yanlış alarm oranı, sırt çantasının 300 örnekte kaba kuvvetle aynı olması, plan verisinin SQL'siz hesapla aynı olması, 7 kapasitede en iyi seçim, rol ve doğrulama |
 | `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
-| `test_arac_girdileri` | 78 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
+| `test_arac_girdileri` | 79 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
 | `test_api_dogrulama` | 63 | Geçersiz her istek 422, asla 500 değil |
 | `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
 | `test_arayuz_oee` | 20 | OEE panelinin tarih aralıkları (ay ve yıl sınırı, artık yıl), yüzde biçimi ve andon rengi eşikleri (Node ile) |
 | `test_ozellikler` | 10 | Hypothesis ile her biri 300 rastgele girdi: parçalama, token, tarih filtresi, sayı eşleştirme |
-| diğerleri | 138 | API, agent döngüsü, giriş, RAG, seed, değerlendirme setinin tutarlılığı |
+| diğerleri | 147 | API, agent döngüsü, sistem istemindeki hazır tarih aralıkları (ay ve yıl sınırı), giriş, RAG, seed, değerlendirme setinin tutarlılığı |
 
 Testlerin bulduğu iki gerçek hata düzeltildi: token'sız `/chat` isteğinin 401 yerine 503 dönmesi
 (giriş yapmamış biri sunucunun ayar durumunu öğrenebiliyordu) ve girdide NUL baytının
@@ -538,9 +571,6 @@ app/
   bakim_plani.py makine riskleri ve haftalık bakım planı
   telegram_bot.py  Telegram botu: eşleştirme, soru, fotoğraflı talep, bildirim, komutlar
   telegram_api.py  Telegram Bot API istemcisi (token'ı hatalara sızdırmaz)
-scripts/telegram_bot.py    botu çalıştırır (uzun yoklama)
-scripts/telegram_prova.py  token olmadan uçtan uca prova (sahte Telegram sunucusu)
-scripts/ariza_ekle.py      bildirim denemesi için hattı durduran bir arıza ekler
   tools.py       agent araçları ve JSON şemaları
   llm.py         Gemini/Ollama istemcisi, maliyet hesabı
   rag.py         PDF okuma, parçalama, vektör araması
@@ -549,10 +579,13 @@ scripts/ariza_ekle.py      bildirim denemesi için hattı durduran bir arıza ek
   sorgular.py    SQL sorguları
   static/        sohbet, OEE paneli ve vardiya raporu ekranları
 scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
+  telegram_bot.py    botu çalıştırır (uzun yoklama)
+  telegram_prova.py  token olmadan uçtan uca prova (sahte Telegram sunucusu)
+  ariza_ekle.py      bildirim denemesi için hattı durduran bir arıza ekler ve bitirir
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2551 test
+tests/           2574 test
 ```
 
 ## Bilinen eksikler

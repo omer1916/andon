@@ -37,6 +37,7 @@ from app.auth import ROL_ADLARI, ROL_ERISIMI, Kullanici
 from app.db import TZ
 from app.embedding import Embedder
 from app.llm import LLM
+from app.rapor import yuzde_metni
 from app.telegram_api import Telegram, TelegramHatasi
 from app.tools import AracBaglami
 
@@ -126,11 +127,14 @@ def kod_uret(conn: psycopg.Connection, kullanici_adi: str, simdi: datetime | Non
 
 
 def eslestir(conn: psycopg.Connection, kod: str, chat_id: int, simdi: datetime) -> str | None:
-    """Kod geçerliyse sohbeti kullanıcıya bağlar ve kodu siler; kullanıcı adını döner."""
+    """Kod geçerliyse sohbeti kullanıcıya bağlar ve kodu siler; kullanıcı adını döner.
+    Kodu aldıktan sonra silinmiş bir kullanıcıya bağlanılmaz: tablolar arasında yabancı anahtar
+    olmadığından (bkz. sql/telegram.sql) aksi hâlde sahipsiz bir bağlantı kalırdı."""
     with conn.transaction():
         satir = conn.execute(
-            "DELETE FROM telegram_kodlari WHERE kod_ozeti = %s AND son_gecerlilik > %s "
-            "RETURNING kullanici_adi",
+            "DELETE FROM telegram_kodlari k USING kullanicilar u "
+            "WHERE k.kod_ozeti = %s AND k.son_gecerlilik > %s "
+            "AND u.kullanici_adi = k.kullanici_adi RETURNING k.kullanici_adi",
             [kod_ozeti(kod), simdi],
         ).fetchone()
         if satir is None:
@@ -176,19 +180,38 @@ def _kacir(metin: str) -> str:
     return html.escape(metin, quote=False)
 
 
+_YER_TUTUCU = ""  # Unicode özel kullanım alanı; girdiden önce silinir
+
+
 def telegram_html(metin: str) -> str:
     """Agent'ın kısıtlı Markdown'ını Telegram HTML'ine çevirir. Önce bütün metin kaçırılır;
-    modelin ya da kılavuzun ürettiği hiçbir etiket Telegram'a etiket olarak gitmez."""
+    modelin ya da kılavuzun ürettiği hiçbir etiket Telegram'a etiket olarak gitmez.
+
+    Etiketler her zaman doğru iç içe geçer; Telegram yanlış iç içe geçmiş HTML'i ("can't parse
+    entities") reddeder ve cevap hiç gitmez. Bunun için kod parçaları önce yer tutucuya alınır
+    (içleri biçimlenmez), kalın ve italik de bir etiketin sınırını aşamaz: `**a *b** c*` gibi
+    çakışan işaretlerde italik uygulanmaz, yıldızlar metinde kalır."""
+    kodlar: list[str] = []
+
+    def kodu_sakla(m: re.Match) -> str:
+        kodlar.append(f"<code>{m.group(1)}</code>")
+        return f"{_YER_TUTUCU}{len(kodlar) - 1}{_YER_TUTUCU}"
+
     satirlar = []
-    for satir in _kacir(metin).splitlines():
-        satir = re.sub(r"^\s*#{1,6}\s+(.+)$", r"<b>\1</b>", satir)
+    for satir in _kacir(metin.replace(_YER_TUTUCU, "")).splitlines():
+        satir = re.sub(r"`([^`\n]+)`", kodu_sakla, satir)
+        baslik = re.fullmatch(r"\s*#{1,6}\s+(.+)", satir)
+        if baslik:  # başlık zaten kalın; içindeki ** işaretleri atılır
+            satirlar.append(f"<b>{baslik.group(1).replace('**', '')}</b>")
+            continue
         # Alt maddeler (girintili) girintili ve farklı işaretle kalsın.
         satir = re.sub(r"^([ \t]*)[-*•]\s+", lambda m: "    ◦ " if m.group(1) else "• ", satir)
+        satir = re.sub(r"\*\*([^<>]+?)\*\*", r"<b>\1</b>", satir)
+        satir = re.sub(r"(?<![*\w])\*(?![\s*])([^*<>]+?)(?<!\s)\*(?![*\w])", r"<i>\1</i>", satir)
         satirlar.append(satir)
-    metin = "\n".join(satirlar)
-    metin = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", metin)
-    metin = re.sub(r"(?<![*\w])\*(?![\s*])([^*\n]+?)(?<!\s)\*(?![*\w])", r"<i>\1</i>", metin)
-    return re.sub(r"`([^`\n]+)`", r"<code>\1</code>", metin)
+    return re.sub(
+        f"{_YER_TUTUCU}(\\d+){_YER_TUTUCU}", lambda m: kodlar[int(m.group(1))], "\n".join(satirlar)
+    )
 
 
 def cevap_metni(sonuc: agent.SohbetSonucu) -> str:
@@ -197,10 +220,6 @@ def cevap_metni(sonuc: agent.SohbetSonucu) -> str:
     if kaynaklar:
         metin += f"\n\n<i>Kaynaklar: {_kacir(', '.join(kaynaklar))}</i>"
     return metin
-
-
-def _yuzde(oran: float | None) -> str:
-    return "–" if oran is None else f"%{oran * 100:.1f}".replace(".", ",")
 
 
 def _isik(oran: float | None) -> str:
@@ -220,9 +239,9 @@ def rapor_ozeti(r: dict) -> str:
     f = r["fabrika"]
     satirlar = [
         f"<b>Vardiya raporu: {r['tarih']:%d.%m.%Y}, {r['vardiya']}. vardiya</b>",
-        f"{_isik(f['oee'])} Fabrika OEE {_yuzde(f['oee'])} (kullanılabilirlik "
-        f"{_yuzde(f['kullanilabilirlik'])}, performans {_yuzde(f['performans'])}, kalite "
-        f"{_yuzde(f['kalite'])})",
+        f"{_isik(f['oee'])} Fabrika OEE {yuzde_metni(f['oee'])} (kullanılabilirlik "
+        f"{yuzde_metni(f['kullanilabilirlik'])}, performans {yuzde_metni(f['performans'])}, kalite "
+        f"{yuzde_metni(f['kalite'])})",
         "",
         _kacir(r["yorum"]["ozet"]),
     ]
@@ -235,9 +254,11 @@ def rapor_ozeti(r: dict) -> str:
     satirlar += ["", "<b>En düşük hatlar</b>"]
     for h in r["hatlar"][:3]:
         yedi = (
-            f" (son 7 gün {_yuzde(h['son_7_gun_oee'])})" if h["son_7_gun_oee"] is not None else ""
+            f" (son 7 gün {yuzde_metni(h['son_7_gun_oee'])})"
+            if h["son_7_gun_oee"] is not None
+            else ""
         )
-        satirlar.append(f"{_isik(h['oee'])} {_kacir(h['hat'])}: {_yuzde(h['oee'])}{yedi}")
+        satirlar.append(f"{_isik(h['oee'])} {_kacir(h['hat'])}: {yuzde_metni(h['oee'])}{yedi}")
     satirlar += [
         "",
         f"Vardiyada başlayan arıza: {len(r['arizalar'])} · açık bakım talebi: "
@@ -271,9 +292,22 @@ class Bot:
         self._yanlis_kodlar: dict[int, deque[float]] = defaultdict(deque)
         self._sorular: dict[int, deque[float]] = defaultdict(deque)
         self.son_ariza_id: int | None = None  # bildirilen son arıza; ilk turda belirlenir
+        # Görülmüş ama henüz hattı durdurmamış açık arızalar: MES hat_durdu'yu sonradan
+        # true yaparsa o turda bildirilir.
+        self._izlenen: set[int] = set()
 
     def _gonder(self, chat_id: int, metin: str) -> None:
         self.api.mesaj_gonder(chat_id, metin)
+
+    def islenemedi(self, guncelleme: dict) -> None:
+        """Mesaj beklenmedik bir hatayla işlenemediyse kullanıcıya söyler; sessiz kalmasın."""
+        mesaj = guncelleme.get("message") or {}
+        if mesaj.get("chat", {}).get("type") != "private":
+            return
+        try:
+            self._gonder(mesaj["chat"]["id"], "Mesajınız işlenemedi; biraz sonra tekrar deneyin.")
+        except TelegramHatasi:
+            pass
 
     def _yaziyor(self, chat_id: int) -> None:
         try:
@@ -372,15 +406,20 @@ class Bot:
         zamanlar.append(simdi)
         return False
 
-    def _agent(
-        self, chat_id: int, kullanici: Kullanici, soru: str
-    ) -> tuple[agent.SohbetSonucu | None, AracBaglami]:
-        """Agent'ı kullanıcının rolüyle çalıştırıp kaydeder. Hata olursa kullanıcıya söyler."""
-        baglam = AracBaglami(conn=self.conn, embedder=self.embedder, kullanici=kullanici)
+    def _llm(self, chat_id: int) -> LLM | None:
+        """Ayarlı LLM; yoksa kullanıcıya söyler ve None döner."""
         llm = self.llm_getir()
         if llm is None:
             self._gonder(chat_id, "Asistan şu an ayarlı değil (LLM anahtarı tanımlı değil).")
-            return None, baglam
+        return llm
+
+    def _agent(
+        self, chat_id: int, kullanici: Kullanici, soru: str, llm: LLM
+    ) -> tuple[agent.SohbetSonucu | None, AracBaglami]:
+        """Agent'ı kullanıcının rolüyle çalıştırıp kaydeder. Hata olursa kullanıcıya söyler."""
+        baglam = AracBaglami(
+            conn=self.conn, embedder=self.embedder, kullanici=kullanici, simdi=self.simdi()
+        )
         self._yaziyor(chat_id)
         try:
             sonuc = agent.sohbet(soru, llm, baglam)
@@ -394,9 +433,9 @@ class Bot:
         return sonuc, baglam
 
     def _soru(self, chat_id: int, kullanici: Kullanici, soru: str) -> None:
-        if self._sinirda_mi(chat_id):
+        if self._sinirda_mi(chat_id) or (llm := self._llm(chat_id)) is None:
             return
-        sonuc, _ = self._agent(chat_id, kullanici, soru)
+        sonuc, _ = self._agent(chat_id, kullanici, soru, llm)
         if sonuc is not None:
             self._gonder(chat_id, cevap_metni(sonuc))
 
@@ -409,7 +448,8 @@ class Bot:
                 "Fotoğrafın altına makine kodunu ve sorunu yazın, örneğin: "
                 "<i>P3-HP'de yağ kaçağı var</i>.",
             )
-        if self._sinirda_mi(chat_id):
+        # LLM yoksa fotoğraf boşuna indirilmesin (5 MB'a kadar).
+        if self._sinirda_mi(chat_id) or (llm := self._llm(chat_id)) is None:
             return
         foto = mesaj["photo"][-1]  # Telegram aynı fotoğrafın boyutlarını küçükten büyüğe verir
         if foto.get("file_size", 0) > EN_BUYUK_FOTOGRAF:
@@ -424,7 +464,7 @@ class Bot:
             "Bu sorun için bakım talebi aç; öncelik belirtilmemişse sorunun ciddiyetine göre "
             "seç. Makine kodu anlaşılmıyorsa talep açma, makine kodunu sor."
         )
-        sonuc, baglam = self._agent(chat_id, kullanici, soru)
+        sonuc, baglam = self._agent(chat_id, kullanici, soru, llm)
         if sonuc is None:
             return
         if baglam.acilan_talepler:
@@ -452,34 +492,35 @@ class Bot:
         bugun: date = self.simdi().date()
         aralik = {"baslangic": bugun - timedelta(days=6), "bitis": bugun}
         if hat:
+            if hata := sorgular.hat_hatasi(self.conn, hat):
+                return self._gonder(chat_id, _kacir(hata))
             ad = sorgular.hat_adini_bul(self.conn, hat)
-            if ad is None:
-                gecerli = ", ".join(h["ad"] for h in sorgular.hatlari_getir(self.conn))
-                return self._gonder(chat_id, _kacir(f"'{hat}' adında hat yok. Hatlar: {gecerli}"))
             (t,) = sorgular.oee_hesapla(self.conn, hat=ad, **aralik)
             pareto = sorgular.durus_pareto(self.conn, hat=ad, **aralik)
             satirlar = [
                 f"<b>{_kacir(ad)}, son 7 gün</b>",
-                f"{_isik(t['oee'])} OEE {_yuzde(t['oee'])}",
-                f"Kullanılabilirlik {_yuzde(t['kullanilabilirlik'])} · performans "
-                f"{_yuzde(t['performans'])} · kalite {_yuzde(t['kalite'])}",
+                f"{_isik(t['oee'])} OEE {yuzde_metni(t['oee'])}",
+                f"Kullanılabilirlik {yuzde_metni(t['kullanilabilirlik'])} · performans "
+                f"{yuzde_metni(t['performans'])} · kalite {yuzde_metni(t['kalite'])}",
             ]
             if pareto:
                 d = pareto[0]
-                neden = rapor.DURUS_ADLARI.get(d["neden"]) or f"arıza ({d['ariza_tipi']})"
-                satirlar.append(f"En büyük duruş: {neden}, {d['sure_dk']} dk")
+                satirlar.append(f"En büyük duruş: {rapor.durus_adi(d)}, {d['sure_dk']} dk")
             return self._gonder(chat_id, "\n".join(satirlar))
         hatlar = sorgular.oee_hesapla(self.conn, grup="hat", **aralik)
         hatlar.sort(key=lambda h: h["oee"] or 0)
         satirlar = ["<b>Son 7 günde hatların OEE'si</b>"] + [
-            f"{_isik(h['oee'])} {_kacir(h['hat'])}: {_yuzde(h['oee'])}" for h in hatlar
+            f"{_isik(h['oee'])} {_kacir(h['hat'])}: {yuzde_metni(h['oee'])}" for h in hatlar
         ]
         self._gonder(chat_id, "\n".join(satirlar))
 
     def _plan(self, chat_id: int, kullanici: Kullanici, arguman: str) -> None:
         if kullanici.rol != "bakim":
             return self._gonder(chat_id, "Bakım planı yalnızca bakım mühendislerine açık.")
-        kapasite = int(arguman) if arguman.isdigit() and 1 <= int(arguman) <= 200 else 16
+        # isdigit() değil: "²" isdigit() için rakamdır ama int() onu çeviremez.
+        kapasite = int(arguman) if re.fullmatch(r"[0-9]{1,3}", arguman) else 16
+        if not 1 <= kapasite <= 200:
+            kapasite = 16
         plan = bakim_plani.bakim_plani(self.conn, self.simdi(), kapasite_saat=kapasite)
         satirlar = [f"<b>Bu haftanın bakım planı</b> ({kapasite} saat)"]
         for r in (r for r in plan["makineler"] if r["secildi"]):
@@ -498,27 +539,39 @@ class Bot:
     # --- Arıza bildirimi ---------------------------------------------------------------
 
     def bildirimleri_gonder(self) -> int:
-        """Son turdan beri başlayan ve hattı durduran arızaları eşleşmiş herkese bildirir;
-        gönderilen mesaj sayısını döner. İlk turda yalnızca başlangıç noktasını belirler
-        (geçmiş arızalar bildirilmez). Seed yeniden kurulduysa (en büyük id küçüldüyse) de."""
+        """Son turdan beri başlayan ya da sonradan hattı durdurduğu kaydedilen arızaları
+        eşleşmiş herkese bildirir; gönderilen mesaj sayısını döner. İlk turda yalnızca
+        başlangıç noktasını belirler (geçmiş arızalar bildirilmez). Seed yeniden kurulduysa
+        (en büyük id küçüldüyse) de. Her arıza en fazla bir kez bildirilir."""
         son = self.conn.execute("SELECT coalesce(max(id), 0) FROM ariza_kayitlari").fetchone()[0]
-        onceki, self.son_ariza_id = self.son_ariza_id, son
-        if onceki is None or son <= onceki:
+        onceki = self.son_ariza_id
+        if onceki is None or son < onceki:
+            self.son_ariza_id, self._izlenen = son, set()
+            return 0
+        if son == onceki and not self._izlenen:
             return 0
         with self.conn.cursor() as cur:
+            # Üst sınır `son`: max(id)'den sonra eklenen arıza bu turda bildirilirse bir sonraki
+            # turda (id > son) ikinci kez bildirilirdi.
             cur.execute(
                 """
-                SELECT a.id, a.baslangic, a.ariza_tipi, a.onem, a.aciklama,
-                       m.kod, m.ad, h.ad
+                SELECT a.id, a.hat_durdu, a.bitis IS NULL, a.baslangic, a.ariza_tipi, a.onem,
+                       a.aciklama, m.kod, m.ad, h.ad
                 FROM ariza_kayitlari a
                 JOIN makineler m ON m.id = a.makine_id
                 JOIN hatlar h    ON h.id = m.hat_id
-                WHERE a.id > %s AND a.hat_durdu
+                WHERE (a.id > %s AND a.id <= %s) OR a.id = ANY(%s)
                 ORDER BY a.id
                 """,
-                [onceki],
+                [onceki, son, list(self._izlenen)],
             )
-            arizalar = cur.fetchall()
+            satirlar = cur.fetchall()
+        # Durum göndermeden önce ilerler: gönderim yarıda kesilirse tekrar değil eksik bildirim.
+        self.son_ariza_id = son
+        self._izlenen = {s[0] for s in satirlar if not s[1] and s[2]}
+        arizalar = [(s[0], *s[3:]) for s in satirlar if s[1]]
+        if not arizalar:
+            return 0
         alicilar = self.conn.execute(
             "SELECT b.chat_id, k.rol FROM telegram_baglantilari b "
             "JOIN kullanicilar k USING (kullanici_adi) ORDER BY b.chat_id"
@@ -576,8 +629,15 @@ class Bot:
     # --- Saklama süresi ----------------------------------------------------------------
 
     def eski_verileri_temizle(self) -> tuple[int, int]:
-        """Süresi geçmiş kodları ve saklama süresini aşan fotoğrafları siler.
-        (silinen kod, silinen fotoğraf) döner."""
+        """Süresi geçmiş kodları ve saklama süresini aşan fotoğrafları siler; sınır penceresi
+        geçmiş sohbetleri bellekten atar. (silinen kod, silinen fotoğraf) döner."""
+        an = self.saat()
+        for zamanlar, pencere in (
+            (self._yanlis_kodlar, KOD_GECERLILIK.total_seconds()),
+            (self._sorular, SORU_PENCERESI_SN),
+        ):
+            for chat_id in [c for c, z in zamanlar.items() if not self._pencerede(z, an, pencere)]:
+                del zamanlar[chat_id]
         simdi = self.simdi()
         kodlar = self.conn.execute(
             "DELETE FROM telegram_kodlari WHERE son_gecerlilik < %s", [simdi]

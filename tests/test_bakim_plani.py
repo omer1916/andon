@@ -281,7 +281,9 @@ def test_bakim_plani_gecersiz_parametre_422(istemci, parametreler):
 
 
 def _baglam(conn, rol: str) -> AracBaglami:
-    return AracBaglami(conn=conn, embedder=SahteEmbedder(), kullanici=Kullanici("t", "T", rol))
+    return AracBaglami(
+        conn=conn, embedder=SahteEmbedder(), kullanici=Kullanici("t", "T", rol), simdi=SABIT_AN
+    )
 
 
 def test_bakim_plani_araci_bakim_rolune_plan_doner(baglanti):
