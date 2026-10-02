@@ -37,6 +37,9 @@ export function bakimEkrani({ api, eleman }) {
   async function yukle() {
     if (!form.reportValidity()) return;
     const parametreler = new URLSearchParams(new FormData(form));
+    const dugme = form.querySelector('button[type="submit"]');
+    dugme.disabled = true;
+    dugme.textContent = "Hesaplanıyor…";
     durum("Hesaplanıyor…");
     try {
       const cevap = await api(`/bakim-plani?${parametreler}`);
@@ -49,6 +52,9 @@ export function bakimEkrani({ api, eleman }) {
       ciz(veri);
     } catch (hata) {
       if (hata.name !== "OturumBitti") durum("Sunucuya ulaşılamadı; tekrar deneyin.");
+    } finally {
+      dugme.disabled = false;
+      dugme.textContent = "Planı hesapla";
     }
   }
 
@@ -95,8 +101,14 @@ export function bakimEkrani({ api, eleman }) {
     t.tHead.append(baslik);
     for (const r of makineler) {
       const satir = eleman("tr", r.secildi ? "secili" : null);
-      const plan = eleman("td", "plan-isareti", r.secildi ? "✓" : "");
-      plan.setAttribute("aria-label", r.secildi ? "Planda" : "Planda değil");
+      // Ekran okuyucu "✓" yerine "Planda" okusun; td'deki aria-label her okuyucuda okunmuyor.
+      const plan = eleman("td", "plan-isareti");
+      if (r.secildi) {
+        const isaret = eleman("span", null, "✓");
+        isaret.setAttribute("aria-hidden", "true");
+        plan.append(isaret);
+      }
+      plan.append(eleman("span", "gorunmez", r.secildi ? "Planda" : "Planda değil"));
       const makine = eleman("th");
       makine.scope = "row";
       makine.append(eleman("code", null, r.makine_kodu), eleman("span", "soluk", ` ${r.makine_adi} · ${r.hat}`));

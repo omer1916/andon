@@ -4,6 +4,7 @@
 const YUZDE = new Intl.NumberFormat("tr-TR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const SAYI = new Intl.NumberFormat("tr-TR");
 const GUN_ETIKETI = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short" });
+const TARIH_ARALIGI = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short", year: "numeric" });
 const DUNYA_STANDARDI = 0.85;
 const DUSUK = 0.65;
 const VARDIYA_SAATLERI = { 1: "07-15", 2: "15-23", 3: "23-07" };
@@ -40,13 +41,35 @@ export function seviye(oran) {
   return "kirmizi";
 }
 
+// Durum hiçbir yerde yalnızca renkle verilmez: andon yeşili ile kırmızısı kırmızı-yeşil renk
+// körlüğünde (deuteranopi) neredeyse aynı görünür (OKLab ΔE 5, gereken en az 8), sarı da beyaz
+// zeminde 1,9:1 kontrastta kalır. Her seviyenin ayrı bir şekli ve adı var.
+export const SEVIYE_ISARETLERI = {
+  yesil: ["●", "iyi"],
+  sari: ["◆", "orta"],
+  kirmizi: ["▼", "düşük"],
+  yok: ["–", "veri yok"],
+};
+
+export function seviyeEtiketi(eleman, oran) {
+  const s = seviye(oran);
+  const [isaret, ad] = SEVIYE_ISARETLERI[s];
+  const etiket = eleman("span", `seviye-etiketi ${s}`);
+  const sekil = eleman("span", "seviye-isareti", isaret); // renk şekilde, yazı metin renginde
+  sekil.setAttribute("aria-hidden", "true");
+  etiket.append(sekil, ad);
+  return etiket;
+}
+
 export function durusAdi(d) {
   return NEDEN_ADLARI[d.neden] ?? `Arıza: ${ARIZA_TIPLERI[d.ariza_tipi] ?? d.ariza_tipi}`;
 }
 
 export function kpiKarti(eleman, baslik, oran, aciklama, ana = false) {
   const kart = eleman("div", `kpi${ana ? " ana" : ""} ${seviye(oran)}`);
-  kart.append(eleman("span", "kpi-baslik", baslik), eleman("strong", "kpi-deger", yuzde(oran)));
+  const deger = eleman("div", "kpi-satiri");
+  deger.append(eleman("strong", "kpi-deger", yuzde(oran)), seviyeEtiketi(eleman, oran));
+  kart.append(eleman("span", "kpi-baslik", baslik), deger);
   const cubuk = eleman("span", "kpi-cubuk");
   cubuk.style.setProperty("--oran", String(Math.min(1, oran ?? 0)));
   kart.append(cubuk, eleman("span", "kpi-aciklama", aciklama));
@@ -66,6 +89,11 @@ export function kpiKartlari(eleman, t) {
     kpiKarti(eleman, "Performans", t.performans, `${SAYI.format(t.toplam_adet)} adet üretildi`),
     kpiKarti(eleman, "Kalite", t.kalite, `${SAYI.format(t.hurda_adet)} adet hurda`),
   ];
+}
+
+// "2026-09-03", "2026-10-02" -> "3 Eyl – 2 Eki 2026" (ekranda ISO tarih gösterilmez).
+export function aralikMetni(baslangic, bitis) {
+  return TARIH_ARALIGI.formatRange(new Date(`${baslangic}T12:00`), new Date(`${bitis}T12:00`));
 }
 
 export function isoGun(tarih) {
@@ -96,6 +124,23 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
     return { hat: form.hat.value, donem: form.donem.value };
   }
 
+  // Filtre adreste tutulur (#oee?hat=Pres+3&donem=7); yenileyince ve paylaşınca aynı görünüm.
+  function adrestenOku() {
+    const p = new URLSearchParams(location.hash.split("?")[1] ?? "");
+    const form = $("oee-filtre").elements;
+    for (const ad of ["hat", "donem"]) {
+      const deger = p.get(ad);
+      if (deger !== null && [...form[ad].options].some((s) => s.value === deger)) form[ad].value = deger;
+    }
+  }
+
+  function adreseYaz() {
+    const { hat, donem } = secim();
+    const p = new URLSearchParams({ donem });
+    if (hat) p.set("hat", hat);
+    history.replaceState(null, "", `#oee?${p}`);
+  }
+
   // Panelle asistan aynı aralığa baksın diye tarihler soruda açıkça yazılır; "son 30 gün"ü
   // model kendi yorumlarsa (örneğin takvim ayı) paneldekinden farklı bir sayı verebilir.
   function soru() {
@@ -123,6 +168,7 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
     const [baslangic, bitis] = donemAraligi(donem);
     const parametreler = new URLSearchParams({ baslangic, bitis });
     if (hat) parametreler.set("hat", hat);
+    adreseYaz();
     $("oee-durum").textContent = "Yükleniyor…";
     $("oee-durum").hidden = false;
     $("oee-icerik").setAttribute("aria-busy", "true");
@@ -143,7 +189,7 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
   function ciz(veri, { hat, baslangic, bitis }) {
     const t = veri.toplam;
     $("oee-aralik").textContent =
-      `${hat || "Bütün fabrika"} · ${baslangic} – ${bitis} · ${SAYI.format(t.vardiya_sayisi)} vardiya`;
+      `${hat || "Bütün fabrika"} · ${aralikMetni(baslangic, bitis)} · ${SAYI.format(t.vardiya_sayisi)} vardiya`;
     $("oee-bos").hidden = t.vardiya_sayisi > 0;
     $("oee-icerik").hidden = t.vardiya_sayisi === 0;
     if (t.vardiya_sayisi === 0) return;
@@ -156,35 +202,124 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
     $("oee-makineler").replaceChildren(makineler(veri.makineler));
   }
 
+  // Günlük OEE: her gün bir sütun; sütunun tamamı dokunma/fare hedefi, çubuk en fazla 24 px.
+  // Değer ipucuyla (fare, dokunma, ok tuşları) ve altındaki tabloyla okunur; ipucu tek yol değil.
   function trend(gunler) {
     const kap = eleman("div", "trend");
     const degerler = gunler.filter((g) => g.oee != null).map((g) => g.oee);
     const ortalama = degerler.reduce((a, b) => a + b, 0) / (degerler.length || 1);
-    kap.setAttribute("role", "img");
-    kap.setAttribute(
-      "aria-label",
+    const ozet =
       `Günlük OEE, ${gunler.length} gün. En düşük ${yuzde(Math.min(...degerler))}, ` +
-        `en yüksek ${yuzde(Math.max(...degerler))}, gün ortalaması ${yuzde(ortalama)}.`,
-    );
-    const cubuklar = eleman("div", "trend-cubuklar");
-    for (const g of gunler) {
+      `en yüksek ${yuzde(Math.max(...degerler))}, gün ortalaması ${yuzde(ortalama)}. ` +
+      "Ok tuşlarıyla günler arasında gezinilir; değerler alttaki tabloda da var.";
+
+    const alan = eleman("div", "trend-alan");
+    alan.tabIndex = 0;
+    alan.setAttribute("role", "img");
+    alan.setAttribute("aria-label", ozet);
+    const sutunlar = eleman("div", "trend-sutunlar");
+    sutunlar.style.setProperty("--gun", String(gunler.length));
+    for (const [i, g] of gunler.entries()) {
+      const sutun = eleman("span", "trend-gun");
+      sutun.dataset.i = String(i);
       const cubuk = eleman("span", `trend-cubuk ${seviye(g.oee)}`);
       cubuk.style.setProperty("--oran", String(g.oee ?? 0));
-      cubuk.title = `${GUN_ETIKETI.format(new Date(`${g.gun}T12:00`))}: ${yuzde(g.oee)}`;
-      cubuklar.append(cubuk);
+      sutun.append(cubuk);
+      sutunlar.append(sutun);
     }
-    const hedef = eleman("span", "trend-hedef");
-    hedef.style.setProperty("--oran", String(DUNYA_STANDARDI));
-    hedef.title = "Dünya standardı: %85";
-    cubuklar.append(hedef);
+    for (const [esik, sinif] of [[DUNYA_STANDARDI, "ust"], [DUSUK, "alt"]]) {
+      const cizgi = eleman("span", `trend-esik ${sinif}`);
+      cizgi.style.setProperty("--oran", String(esik));
+      cizgi.append(eleman("span", "trend-esik-adi", yuzde(esik).replace(",0", "")));
+      sutunlar.append(cizgi);
+    }
+    const ipucu = eleman("div", "trend-ipucu");
+    ipucu.hidden = true;
+    ipucu.setAttribute("aria-hidden", "true"); // ekran okuyucu için tablo var
+    alan.append(sutunlar, ipucu);
+
+    let etkin = null;
+    function goster(i) {
+      if (etkin != null) sutunlar.children[etkin].classList.remove("etkin");
+      etkin = i;
+      if (i == null) {
+        ipucu.hidden = true;
+        return;
+      }
+      const sutun = sutunlar.children[i];
+      sutun.classList.add("etkin");
+      const g = gunler[i];
+      ipucu.replaceChildren(
+        eleman("strong", null, yuzde(g.oee)),
+        eleman("span", null, GUN_ETIKETI.format(new Date(`${g.gun}T12:00`))),
+        seviyeEtiketi(eleman, g.oee),
+      );
+      ipucu.hidden = false;
+      // Kutucuk sütunun üstünde ortalanır, alanın dışına taşmaz.
+      const a = alan.getBoundingClientRect();
+      const s = sutun.getBoundingClientRect();
+      const genislik = ipucu.offsetWidth;
+      const orta = s.left - a.left + s.width / 2;
+      ipucu.style.left = `${Math.min(Math.max(orta - genislik / 2, 0), a.width - genislik)}px`;
+    }
+    sutunlar.addEventListener("pointerover", (olay) => {
+      const sutun = olay.target.closest(".trend-gun");
+      if (sutun) goster(Number(sutun.dataset.i));
+    });
+    // Dokunmada pointerleave parmak kalkar kalkmaz gelir; ipucu odak gidene kadar kalsın.
+    alan.addEventListener("pointerleave", (olay) => {
+      if (olay.pointerType === "mouse" && document.activeElement !== alan) goster(null);
+    });
+    alan.addEventListener("focus", () => goster(etkin ?? gunler.length - 1));
+    alan.addEventListener("blur", () => goster(null));
+    alan.addEventListener("keydown", (olay) => {
+      const son = gunler.length - 1;
+      const yeni = {
+        ArrowLeft: Math.max((etkin ?? son) - 1, 0),
+        ArrowRight: Math.min((etkin ?? son) + 1, son),
+        Home: 0,
+        End: son,
+      }[olay.key];
+      if (yeni === undefined) return;
+      olay.preventDefault();
+      goster(yeni);
+    });
+
     const eksen = eleman("div", "trend-eksen soluk");
     eksen.append(
       eleman("span", null, GUN_ETIKETI.format(new Date(`${gunler[0].gun}T12:00`))),
-      eleman("span", null, "kesikli çizgi: %85"),
+      eleman("span", null, "kesikli çizgiler: %85 ve %65"),
       eleman("span", null, GUN_ETIKETI.format(new Date(`${gunler.at(-1).gun}T12:00`))),
     );
-    kap.append(cubuklar, eksen);
+    kap.append(alan, eksen, gunlukTablo(gunler));
     return kap;
+  }
+
+  function gunlukTablo(gunler) {
+    const kutu = eleman("details", "tablo-gorunumu");
+    kutu.append(eleman("summary", null, "Tablo olarak göster"));
+    const tablo = eleman("table", "oee-tablo");
+    tablo.append(eleman("thead"), eleman("tbody"));
+    const baslik = eleman("tr");
+    for (const ad of ["Gün", "OEE", "Durum"]) {
+      const th = eleman("th", null, ad);
+      th.scope = "col";
+      baslik.append(th);
+    }
+    tablo.tHead.append(baslik);
+    for (const g of [...gunler].reverse()) {
+      const satir = eleman("tr");
+      const gun = eleman("th", null, GUN_ETIKETI.format(new Date(`${g.gun}T12:00`)));
+      gun.scope = "row";
+      const durum = eleman("td");
+      durum.append(seviyeEtiketi(eleman, g.oee));
+      satir.append(gun, eleman("td", null, yuzde(g.oee)), durum);
+      tablo.tBodies[0].append(satir);
+    }
+    const kap = eleman("div", "tablo-kap");
+    kap.append(tablo);
+    kutu.append(kap);
+    return kutu;
   }
 
   function pareto(duruslar) {
@@ -198,7 +333,7 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
         eleman("span", null, durusAdi(d)),
         eleman("span", "soluk", `${SAYI.format(d.sure_dk)} dk · ${yuzde(d.pay)} · birikimli ${yuzde(d.kumulatif_pay)}`),
       );
-      const cubuk = eleman("span", `pareto-cubuk ${d.neden === "ariza" ? "ariza" : ""}`);
+      const cubuk = eleman("span", "pareto-cubuk");
       cubuk.style.setProperty("--oran", String(d.sure_dk / enBuyuk));
       satir.append(ust, cubuk);
       liste.append(satir);
@@ -250,6 +385,7 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
       kart.append(
         eleman("span", "soluk", `${v.vardiya}. vardiya · ${VARDIYA_SAATLERI[v.vardiya]}`),
         eleman("strong", null, yuzde(v.oee)),
+        seviyeEtiketi(eleman, v.oee),
         eleman("span", "soluk", `Perf. ${yuzde(v.performans)} · Kull. ${yuzde(v.kullanilabilirlik)}`),
       );
       kap.append(kart);
@@ -275,6 +411,7 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
   return {
     async goster() {
       await hatlariYukle();
+      adrestenOku();
       await yukle();
     },
   };

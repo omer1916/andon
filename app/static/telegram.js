@@ -17,6 +17,7 @@ export function telegramPenceresi({ api }) {
   async function ac() {
     hata(null);
     $("telegram-kod-alani").hidden = true;
+    $("telegram-kod-al").textContent = "Kod al";
     pencere.showModal();
     await durumuYukle();
   }
@@ -46,6 +47,10 @@ export function telegramPenceresi({ api }) {
 
   async function kodAl() {
     hata(null);
+    // Çift tıklama iki kod üretmesin: ikinci kod ilkini geçersiz kılar.
+    const dugme = $("telegram-kod-al");
+    dugme.disabled = true;
+    dugme.textContent = "Kod alınıyor…";
     try {
       const cevap = await api("/telegram/kod", { method: "POST" });
       if (!cevap.ok) throw new Error(`HTTP ${cevap.status}`);
@@ -59,10 +64,18 @@ export function telegramPenceresi({ api }) {
       $("telegram-kod-alani").hidden = false;
     } catch (e) {
       if (e.name !== "OturumBitti") hata("Kod alınamadı; tekrar deneyin.");
+    } finally {
+      dugme.disabled = false;
+      dugme.textContent = "Yeni kod al";
     }
   }
 
   async function kaldir() {
+    const onay = confirm(
+      "Telegram bağlantısı kaldırılsın mı? Arıza bildirimleri bu sohbete gelmez; yeniden " +
+        "bağlanmak için yeni bir kod gerekir.",
+    );
+    if (!onay) return;
     hata(null);
     try {
       const cevap = await api("/telegram/baglanti", { method: "DELETE" });

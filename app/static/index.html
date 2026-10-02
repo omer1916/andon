@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#171a20" media="(prefers-color-scheme: dark)">
   <title>Andon · Fabrika Asistanı</title>
@@ -37,7 +37,7 @@
         <p class="soluk">Demo kullanıcılar: <code>operator</code> ve <code>bakim</code>. Parola
           <code>.env</code> dosyasındaki <code>DEMO_PAROLA</code>.</p>
         <label>Kullanıcı adı
-          <input name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+          <input name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
         </label>
         <label>Parola
           <input name="password" type="password" autocomplete="current-password" required>
@@ -56,7 +56,7 @@
       </div>
       <ol id="mesajlar" class="mesajlar" aria-live="polite"></ol>
       <form id="soru-formu" class="soru-formu">
-        <textarea id="soru" name="soru" rows="1" maxlength="2000" required autocomplete="off"
+        <textarea id="soru" name="soru" rows="1" maxlength="2000" required autocomplete="off" enterkeyhint="send"
                   placeholder="Örn. Pres 3'te bu hafta kaç arıza oldu…" aria-label="Soru"
                   aria-describedby="soru-ipucu"></textarea>
         <span id="soru-ipucu" class="gorunmez">Göndermek için Enter, yeni satır için Shift+Enter.</span>
@@ -89,8 +89,9 @@
       <p class="soluk" id="oee-bos" hidden>Bu dönemde tamamlanmış vardiya kaydı yok.</p>
       <div id="oee-icerik">
         <div class="kpi-izgara" id="oee-kpi"></div>
-        <p class="lejant soluk"><span class="nokta yesil"></span>%85 ve üstü dünya standardı
-          <span class="nokta sari"></span>%65–85 <span class="nokta kirmizi"></span>%65 altı</p>
+        <p class="lejant soluk"><span class="seviye-isareti yesil" aria-hidden="true">●</span> iyi:
+          %85 ve üstü (dünya standardı) <span class="seviye-isareti sari" aria-hidden="true">◆</span>
+          orta: %65–85 <span class="seviye-isareti kirmizi" aria-hidden="true">▼</span> düşük: %65 altı</p>
         <div class="panel-izgara">
           <section class="panel-kart genis" aria-labelledby="oee-trend-baslik">
             <h2 id="oee-trend-baslik">Günlük OEE</h2>
@@ -132,7 +133,7 @@
             </select>
           </label>
           <label data-secili-vardiya hidden>Tarih
-            <input type="date" name="tarih">
+            <input type="date" name="tarih" autocomplete="off">
           </label>
           <label data-secili-vardiya hidden>No
             <select name="vardiya">
@@ -151,6 +152,7 @@
           <div class="rapor-araclar">
             <button type="button" class="metin-dugme" id="rapor-kopyala">Metni kopyala</button>
             <button type="button" class="metin-dugme" id="rapor-yazdir">Yazdır</button>
+            <span class="gorunmez" id="rapor-kopya-durum" role="status"></span>
           </div>
         </div>
         <div class="kpi-izgara" id="rapor-kpi"></div>
@@ -198,7 +200,8 @@
         </div>
         <form id="plan-formu" class="filtre">
           <label>Ekip kapasitesi (saat)
-            <input type="number" name="kapasite_saat" min="1" max="200" value="16" required>
+            <input type="number" name="kapasite_saat" min="1" max="200" value="16" required
+                   inputmode="numeric" autocomplete="off">
           </label>
           <label>Ufuk
             <select name="ufuk_gun">
@@ -252,8 +255,8 @@
         kodu gönderin.</li>
     </ol>
     <div id="telegram-kod-alani" class="kod-alani" hidden>
-      <strong id="telegram-kod" class="telegram-kod"></strong>
-      <span>Botta şunu yazın: <code id="telegram-komut"></code></span>
+      <strong id="telegram-kod" class="telegram-kod" translate="no"></strong>
+      <span>Botta şunu yazın: <code id="telegram-komut" translate="no"></code></span>
       <span class="soluk" id="telegram-sure"></span>
       <a id="telegram-ac" class="ana-dugme" target="_blank" rel="noopener" hidden>Telegram'da aç</a>
     </div>
