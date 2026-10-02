@@ -26,6 +26,7 @@ UC_NOKTALAR = {
     "pdf-operasyon": ("GET", "/dokumanlar/PRES-OT-01/pdf", None, {"operator": 200, "bakim": 200}),
     "pdf-bakim": ("GET", "/dokumanlar/PRES-BK-01/pdf", None, {"operator": 404, "bakim": 200}),
     "chat": ("POST", "/chat", {"soru": "merhaba"}, {"operator": 200, "bakim": 200}),
+    "rapor": ("POST", "/rapor/vardiya", {}, {"operator": 200, "bakim": 200}),
 }
 
 

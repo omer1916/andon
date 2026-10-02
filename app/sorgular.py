@@ -146,12 +146,19 @@ def ariza_ozeti(
 
 
 def _uretim_kosullari(
-    hat: str | None, baslangic: date | None, bitis: date | None
+    hat: str | None,
+    baslangic: date | None,
+    bitis: date | None,
+    vardiya_baslangici: datetime | None = None,
 ) -> tuple[sql.Composable, dict]:
     """Vardiya sorgularının WHERE koşulu (v: vardiya_uretimi, h: hatlar). Vardiya, başladığı
-    güne sayılır; gece vardiyası (23-07) başladığı günün vardiyasıdır."""
+    güne sayılır; gece vardiyası (23-07) başladığı günün vardiyasıdır. `vardiya_baslangici`
+    verilirse yalnızca o an başlayan vardiya (bütün hatlarda) seçilir."""
     kosullar = []
     parametreler: dict = {}
+    if vardiya_baslangici is not None:
+        kosullar.append(sql.SQL("v.baslangic = %(vardiya_baslangici)s"))
+        parametreler["vardiya_baslangici"] = vardiya_baslangici
     if hat is not None:
         kosullar.append(sql.SQL("lower(h.ad) = lower(%(hat)s)"))
         parametreler["hat"] = hat.strip()
@@ -208,10 +215,11 @@ def oee_hesapla(
     hat: str | None = None,
     baslangic: date | None = None,
     bitis: date | None = None,
+    vardiya_baslangici: datetime | None = None,
     grup: str = "toplam",
 ) -> list[dict]:
     """OEE ve bileşenleri; `grup` ile hatlara, vardiyalara ya da günlere göre ayrılır."""
-    where, parametreler = _uretim_kosullari(hat, baslangic, bitis)
+    where, parametreler = _uretim_kosullari(hat, baslangic, bitis, vardiya_baslangici)
     secim = gruplama = sql.SQL("")
     if OEE_GRUPLARI[grup] is not None:
         kolon, ifade = OEE_GRUPLARI[grup]
@@ -330,6 +338,77 @@ def durduran_makineler(
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sorgu, {**parametreler, "limit": limit})
         return cur.fetchall()
+
+
+def son_vardiya_baslangici(conn: psycopg.Connection) -> datetime | None:
+    """Kaydı olan en son (tamamlanmış) vardiyanın başlangıcı."""
+    return conn.execute("SELECT max(baslangic) FROM vardiya_uretimi").fetchone()[0]
+
+
+def vardiya_kayitli_mi(conn: psycopg.Connection, vardiya_baslangici: datetime) -> bool:
+    sorgu = "SELECT EXISTS (SELECT 1 FROM vardiya_uretimi WHERE baslangic = %s)"
+    return conn.execute(sorgu, [vardiya_baslangici]).fetchone()[0]
+
+
+def vardiya_duruslari_getir(
+    conn: psycopg.Connection, vardiya_baslangici: datetime, limit: int = 8
+) -> list[dict]:
+    """Bir vardiyanın bütün hatlardaki duruşları, en uzundan kısaya."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT h.ad AS hat, d.neden, a.ariza_tipi, m.kod AS makine_kodu, d.sure_dk
+            FROM vardiya_duruslari d
+            JOIN vardiya_uretimi v      ON v.id = d.vardiya_id
+            JOIN hatlar h               ON h.id = v.hat_id
+            LEFT JOIN ariza_kayitlari a ON a.id = d.ariza_id
+            LEFT JOIN makineler m       ON m.id = a.makine_id
+            WHERE v.baslangic = %s
+            ORDER BY d.sure_dk DESC, h.id, d.id
+            LIMIT %s
+            """,
+            [vardiya_baslangici, limit],
+        )
+        return cur.fetchall()
+
+
+def araliktaki_arizalar(conn: psycopg.Connection, bas: datetime, bit: datetime) -> list[dict]:
+    """[bas, bit) aralığında başlayan arızalar, başlangıç sırasıyla."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT h.ad AS hat, m.kod AS makine_kodu, m.ad AS makine_adi, a.baslangic, a.bitis,
+                   round(extract(epoch FROM a.bitis - a.baslangic) / 60)::int AS sure_dk,
+                   a.ariza_tipi, a.onem, a.hat_durdu, a.aciklama
+            FROM ariza_kayitlari a
+            JOIN makineler m ON m.id = a.makine_id
+            JOIN hatlar h    ON h.id = m.hat_id
+            WHERE a.baslangic >= %s AND a.baslangic < %s
+            ORDER BY a.baslangic, a.id
+            """,
+            [bas, bit],
+        )
+        return cur.fetchall()
+
+
+def acik_talepler(conn: psycopg.Connection, limit: int = 5) -> tuple[int, list[dict]]:
+    """Açık bakım taleplerinin sayısı ve önceliği en yüksek (eşitse en yeni) olanları."""
+    toplam = conn.execute("SELECT count(*) FROM bakim_talepleri WHERE durum = 'acik'").fetchone()
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT t.id, m.kod AS makine_kodu, h.ad AS hat, t.oncelik, t.aciklama, t.olusturma
+            FROM bakim_talepleri t
+            JOIN makineler m ON m.id = t.makine_id
+            JOIN hatlar h    ON h.id = m.hat_id
+            WHERE t.durum = 'acik'
+            ORDER BY array_position(ARRAY['yuksek', 'orta', 'dusuk'], t.oncelik),
+                     t.olusturma DESC, t.id DESC
+            LIMIT %s
+            """,
+            [limit],
+        )
+        return toplam[0], cur.fetchall()
 
 
 def stok_getir(

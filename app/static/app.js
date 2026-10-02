@@ -2,6 +2,7 @@
 
 import { guvenliMarkdown } from "./metin.js";
 import { oeeEkrani } from "./oee.js";
+import { raporEkrani } from "./rapor.js";
 
 const OTURUM_ANAHTARI = "andon.oturum";
 const ROL_ADLARI = { operator: "Operatör", bakim: "Bakım mühendisi" };
@@ -32,7 +33,8 @@ let oturum = oturumuOku();
 let bekleniyor = false;
 let aktifEkran = "sohbet";
 
-const EKRANLAR = { sohbet: "sohbet-ekrani", oee: "oee-ekrani" };
+const EKRANLAR = { sohbet: "sohbet-ekrani", oee: "oee-ekrani", rapor: "rapor-ekrani" };
+const rapor = raporEkrani({ api, eleman });
 const oee = oeeEkrani({
   api,
   eleman,
@@ -116,6 +118,7 @@ function ekranSec(ad) {
   }
   if (ad === "sohbet") $("soru").focus();
   if (ad === "oee") oee.goster();
+  if (ad === "rapor") rapor.goster();
 }
 
 for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {

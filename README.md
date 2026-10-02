@@ -22,6 +22,11 @@ Renkler andon ışıklarıyla aynıdır: %85 ve üstü yeşil (dünya standardı
 kırmızı. "Asistana sor" düğmesi paneldeki hat ve tarih aralığıyla asistana "OEE neden bu
 seviyede?" diye sorar; asistan aynı sayıları `oee_hesapla` aracından alır.
 
+**Vardiya raporu** bir vardiyanın OEE'sini, en uzun duruşlarını, vardiyada başlayan arızaları,
+açık bakım taleplerini ve kritik stoğu tek sayfada toplar; asistan da bunlardan kısa bir özet ve
+öneriler yazar. Rapor kopyalanıp mesaja yapıştırılabilir ya da yazdırılabilir. Sayıların hepsi
+veritabanından gelir; asistanın yazdığı yorumdaki her sayı bu verilerle karşılaştırılır.
+
 > Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
@@ -39,7 +44,7 @@ seviyede?" diye sorar; asistan aynı sayıları `oee_hesapla` aracından alır.
 
 ```mermaid
 flowchart LR
-    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar · /oee"]
+    K["Tarayıcı<br/>(vanilla JS)"] -->|JWT| API["FastAPI<br/>/chat · /ara · /arizalar<br/>/oee · /rapor/vardiya"]
     API --> AG["Agent döngüsü<br/>(en fazla 6 adım)"]
     AG <-->|"araç çağrıları"| LLM["Gemini / Ollama<br/>OpenAI uyumlu API"]
     AG --> T1["ariza_say · oee_hesapla<br/>stok_sorgula · bakim_talebi_olustur"]
@@ -76,7 +81,7 @@ http://localhost:8000/docs adresindedir.
 | LLM | Gemini (`gemini-3.5-flash-lite`), OpenAI uyumlu uç noktası üzerinden; Ollama isteğe bağlı |
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
-| Kalite | pytest (1989 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2073 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Tasarım kararları
@@ -154,6 +159,27 @@ model çarpma ya da yuvarlama yapmaz, sayıyı olduğu gibi aktarır. Panelin "A
 düğmesi soruya tarih aralığını açıkça yazar: "son 30 gün"ü model takvim ayı olarak yorumlarsa
 panelle asistan farklı sayılar verirdi (denemede %63,8'e karşı %63,6).
 
+**Vardiya raporunda LLM yalnızca yorumu yazıyor ve yorum denetleniyor.** Raporun sayıları
+SQL ile hesaplanır. LLM'e bu sayılar (yüzdeler hazır, adlar okunur hâlde) verilir ve ondan
+yalnızca `{"ozet", "dikkat", "oneriler"}` biçiminde bir JSON istenir. Yanıt iki denetimden
+geçer:
+
+1. **Biçim:** Pydantic modeli (`RaporYorumu`): özet 10–800 karakter, en fazla 5'er madde.
+2. **Sayı denetimi:** Yorumdaki her sayı, LLM'e verilen verilerde geçmek zorunda. "%63,8",
+   "63.8", "4.237 dk" ve "4,237" gibi Türkçe ve İngilizce yazımlar tanınır; tarih parçaları
+   ("29 Eylül") kabul edilir. Model kendi hesapladığı bir farkı ("8,2 puan düştü") ya da veride
+   olmayan bir hedefi ("%85") yazarsa yorum reddedilir.
+
+Reddedilen yanıt, sorun söylenerek ("Verilerde olmayan sayılar var: 17,35.") bir kez daha
+istenir. İkinci yanıt da geçmezse, LLM'e ulaşılamazsa ya da anahtar tanımlı değilse yorumu
+kurallar yazar; rapor her durumda çıkar ve hangi yolla yazıldığını söyler. Kural yorumu da aynı
+sayı denetiminden geçer (testle doğrulanır). Gerçek Gemini ile son tamamlanan vardiyanın raporu
+**1,8 saniyede, $0,0015'e** (2.150 token) hazırlandı ve yorum ilk denemede denetimden geçti.
+
+Denetim bir kanıt değil, bir süzgeç: küçük tam sayılar (3, 12, 25) veride zaten sık geçtiği için
+uydurulmuş küçük bir tam sayı denetimden kaçabilir. Asıl yakaladığı şey, modelin kendi
+hesapladığı ondalıklı farklar ve veride hiç olmayan yüzdeler.
+
 **Arıza kaydı makineye bağlı.** Arıza, iş emri ve bakım talebi hatta değil makineye bağlıdır; hatta
 `makineler.hat_id` üzerinden ulaşılır. İki alan birden tutulsaydı bir kaydın makinesi bir hatta,
 `hat_id`'si başka bir hatta görünebilirdi. Kurallar `CHECK` kısıtlarıyla veritabanındadır (arıza
@@ -161,7 +187,8 @@ bitişi başlangıçtan sonra, kapalı iş emrinin kapanış zamanı var ...).
 
 **Her istek kayıt altında.** `llm_istekleri` tablosu kullanıcıyı, modeli, çağrılan araçları, adım
 sayısını, girdi/çıktı token'ını, maliyeti ve süreyi tutar. İstek yarıda hata verse bile (kota, ağ)
-o ana kadar harcanan token'lar kaydedilir. `GET /kullanim` toplamları, ortalama ve p95 süreyi döner.
+o ana kadar harcanan token'lar kaydedilir. Vardiya raporunun LLM çağrıları da (reddedilen
+yanıtlar dahil) buraya yazılır. `GET /kullanim` toplamları, ortalama ve p95 süreyi döner.
 
 ## Ölçümler
 
@@ -250,7 +277,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 1989 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2073 test (~45 sn); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -263,11 +290,12 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_farkli_yoldan` | 611 | Her hat × ay × arıza tipi, her gün, her stok kodu ve makine için API ve araç sonucu, SQL kullanmadan Python'da hesaplanan sonuçla aynı |
 | `test_oee` | 372 | 40 tohumda vardiya ve duruş kuralları ile OEE desenleri; planlı süre ve arıza duruşu dakika dakika kümelerle yeniden hesaplanıyor; her hat × ay ve rastgele aralıklar için API'nin OEE'si, günlük seyri, Pareto'su ve makine listesi SQL kullanmadan hesaplanan sonuçla aynı |
 | `test_seed_ozellikleri` | 280 | 40 farklı rastgele tohumla üretilen veride şema kuralları ve veri desenleri tutuyor |
-| `test_guvenlik_matrisi` | 161 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_guvenlik_matrisi` | 179 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
+| `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
 | `test_arac_girdileri` | 76 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
-| `test_api_dogrulama` | 55 | Geçersiz her istek 422, asla 500 değil |
+| `test_api_dogrulama` | 63 | Geçersiz her istek 422, asla 500 değil |
 | `test_degerlendirici` | 48 | Değerlendiricinin kendisi: sayı eşleştirme, Türkçe ekler, kaynak ve yetki kontrolü |
 | `test_arayuz_oee` | 20 | OEE panelinin tarih aralıkları (ay ve yıl sınırı, artık yıl), yüzde biçimi ve andon rengi eşikleri (Node ile) |
 | `test_ozellikler` | 10 | Hypothesis ile her biri 300 rastgele girdi: parçalama, token, tarih filtresi, sayı eşleştirme |
@@ -341,18 +369,19 @@ agent iki kaynağı tek cevapta birleştirebilir ("kılavuz SNS-002'yi söylüyo
 app/
   main.py        FastAPI uç noktaları
   agent.py       araç döngüsü, sistem istemi, istek kaydı
+  rapor.py       vardiya raporu: veri, LLM yorumu, sayı denetimi, kural yorumu
   tools.py       agent araçları ve JSON şemaları
   llm.py         Gemini/Ollama istemcisi, maliyet hesabı
   rag.py         PDF okuma, parçalama, vektör araması
   embedding.py   multilingual-e5-small
   auth.py        JWT, roller, parola hash'i
   sorgular.py    SQL sorguları
-  static/        sohbet arayüzü ve OEE paneli
+  static/        sohbet, OEE paneli ve vardiya raporu ekranları
 scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           1989 test
+tests/           2073 test
 ```
 
 ## Bilinen eksikler

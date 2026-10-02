@@ -34,6 +34,7 @@ from psycopg import sql
 from app.auth import parola_hashle
 from app.ayarlar import ayarlar
 from app.db import TZ, baglan
+from app.models import VARDIYA_SAATLERI
 
 # (kullanıcı adı, ad soyad, rol)
 DEMO_KULLANICILAR = [
@@ -174,7 +175,7 @@ BAKIM_TALEBI_ACIKLAMALARI = [
 ]
 
 # Vardiyalar: (numara, başlangıç saati). Her vardiya 8 saat, bunun 30 dakikası planlı mola.
-VARDIYALAR = [(1, 7), (2, 15), (3, 23)]
+VARDIYALAR = list(VARDIYA_SAATLERI.items())
 VARDIYA_DK = 480
 MOLA_DK = 30
 # Hafta sonu üretim az: cumartesi iki, pazar tek vardiya. Gün, vardiyanın başladığı gündür.

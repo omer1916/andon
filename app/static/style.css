@@ -518,6 +518,7 @@ main {
   background: none;
   color: var(--soluk);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .sekme:hover {
@@ -837,6 +838,131 @@ select:focus-visible {
   margin-top: 16px;
 }
 
+/* --- Vardiya raporu -------------------------------------------------------- */
+
+.filtre {
+  align-items: flex-end;
+}
+
+.filtre input[type="date"] {
+  width: auto;
+  padding: 7px 10px;
+}
+
+#rapor-icerik {
+  padding-bottom: 32px;
+}
+
+#rapor-icerik:focus {
+  outline: none;
+}
+
+.rapor-ust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rapor-ust h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.rapor-araclar {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-kart h3 {
+  margin: 0 0 10px;
+  font-size: 0.98rem;
+}
+
+.panel-kart h4 {
+  margin: 8px 0 4px;
+  color: var(--soluk);
+  font-size: 0.85rem;
+}
+
+.panel-kart p {
+  margin: 0 0 8px;
+}
+
+.yorum-maddeleri {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 4px 20px;
+}
+
+.yorum-maddeleri ul,
+.rapor-listesi {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rapor-listesi li,
+.yorum-maddeleri li {
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+}
+
+.rozet {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--kod-zemin);
+  color: var(--soluk);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.rozet.llm {
+  color: var(--yesil);
+}
+
+.kucuk {
+  font-size: 0.8rem;
+}
+
+.dusus {
+  color: var(--kirmizi);
+}
+
+@media print {
+  body {
+    display: block;
+    background: #fff;
+    color: #000;
+  }
+
+  .ust,
+  .atla,
+  .panel-ust,
+  .rapor-araclar,
+  #rapor-durum {
+    display: none !important;
+  }
+
+  .panel-ekrani {
+    height: auto;
+    overflow: visible;
+  }
+
+  .kpi,
+  .panel-kart {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .panel-izgara {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 @media (max-width: 560px) {
   .ust {
     flex-wrap: wrap;
@@ -850,6 +976,8 @@ select:focus-visible {
 
   .sekme {
     flex: 1;
+    padding-inline: 6px;
+    font-size: 0.88rem;
   }
 
   .panel-izgara {

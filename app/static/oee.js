@@ -44,7 +44,31 @@ export function durusAdi(d) {
   return NEDEN_ADLARI[d.neden] ?? `Arıza: ${ARIZA_TIPLERI[d.ariza_tipi] ?? d.ariza_tipi}`;
 }
 
-function isoGun(tarih) {
+export function kpiKarti(eleman, baslik, oran, aciklama, ana = false) {
+  const kart = eleman("div", `kpi${ana ? " ana" : ""} ${seviye(oran)}`);
+  kart.append(eleman("span", "kpi-baslik", baslik), eleman("strong", "kpi-deger", yuzde(oran)));
+  const cubuk = eleman("span", "kpi-cubuk");
+  cubuk.style.setProperty("--oran", String(Math.min(1, oran ?? 0)));
+  kart.append(cubuk, eleman("span", "kpi-aciklama", aciklama));
+  return kart;
+}
+
+// OEE ve bileşenlerinin dört kartı; OEE panelinde ve vardiya raporunda aynı.
+export function kpiKartlari(eleman, t) {
+  return [
+    kpiKarti(eleman, "OEE", t.oee, "Kullanılabilirlik × performans × kalite", true),
+    kpiKarti(
+      eleman,
+      "Kullanılabilirlik",
+      t.kullanilabilirlik,
+      `${SAYI.format(t.durus_dk)} dk duruş / ${SAYI.format(t.planli_sure_dk)} dk planlı`,
+    ),
+    kpiKarti(eleman, "Performans", t.performans, `${SAYI.format(t.toplam_adet)} adet üretildi`),
+    kpiKarti(eleman, "Kalite", t.kalite, `${SAYI.format(t.hurda_adet)} adet hurda`),
+  ];
+}
+
+export function isoGun(tarih) {
   const ay = String(tarih.getMonth() + 1).padStart(2, "0");
   const gun = String(tarih.getDate()).padStart(2, "0");
   return `${tarih.getFullYear()}-${ay}-${gun}`;
@@ -124,26 +148,12 @@ export function oeeEkrani({ api, eleman, asistanaSor }) {
     $("oee-icerik").hidden = t.vardiya_sayisi === 0;
     if (t.vardiya_sayisi === 0) return;
 
-    $("oee-kpi").replaceChildren(
-      kpi("OEE", t.oee, "Kullanılabilirlik × performans × kalite", true),
-      kpi("Kullanılabilirlik", t.kullanilabilirlik, `${SAYI.format(t.durus_dk)} dk duruş / ${SAYI.format(t.planli_sure_dk)} dk planlı`),
-      kpi("Performans", t.performans, `${SAYI.format(t.toplam_adet)} adet üretildi`),
-      kpi("Kalite", t.kalite, `${SAYI.format(t.hurda_adet)} adet hurda`),
-    );
+    $("oee-kpi").replaceChildren(...kpiKartlari(eleman, t));
     $("oee-trend").replaceChildren(trend(veri.gunluk));
     $("oee-pareto").replaceChildren(pareto(veri.duruslar));
     $("oee-hatlar").replaceChildren(hatTablosu(veri.hatlara_gore));
     $("oee-vardiyalar").replaceChildren(vardiyalar(veri.vardiyalara_gore));
     $("oee-makineler").replaceChildren(makineler(veri.makineler));
-  }
-
-  function kpi(baslik, oran, aciklama, ana = false) {
-    const kart = eleman("div", `kpi ${ana ? "ana" : ""} ${seviye(oran)}`);
-    kart.append(eleman("span", "kpi-baslik", baslik), eleman("strong", "kpi-deger", yuzde(oran)));
-    const cubuk = eleman("span", "kpi-cubuk");
-    cubuk.style.setProperty("--oran", String(Math.min(1, oran ?? 0)));
-    kart.append(cubuk, eleman("span", "kpi-aciklama", aciklama));
-    return kart;
   }
 
   function trend(gunler) {
