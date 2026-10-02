@@ -49,7 +49,14 @@ body {
   height: 100%;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent; /* dokununca gri/mavi parlama olmasın */
+  -webkit-text-size-adjust: 100%; /* yatay telefonda yazı büyütülmesin */
+  overscroll-behavior: none; /* uygulama kabuğu: aşağı çekince sayfa yenilenmesin */
+}
+
 body {
+  height: 100dvh; /* adres çubuğu açıkken soru kutusu ekranın altında kalmasın */
   margin: 0;
   display: grid;
   grid-template-rows: auto 1fr;
@@ -120,7 +127,8 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 20px;
+  padding: max(10px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 10px
+    max(20px, env(safe-area-inset-left));
   background: var(--panel);
   border-bottom: 1px solid var(--cizgi);
 }
@@ -175,12 +183,20 @@ code {
 
 /* --- Düğmeler ve formlar -------------------------------------------------- */
 
+button,
+a,
+summary,
+select {
+  touch-action: manipulation; /* çift dokunma beklenmesin, tıklama hemen gelsin */
+}
+
 button {
   font: inherit;
   cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
+  user-select: none; /* uzun basınca düğme yazısı seçilmesin */
+  -webkit-user-select: none;
 }
+
 
 .ana-dugme {
   padding: 10px 18px;
@@ -191,8 +207,8 @@ button {
   font-weight: 600;
 }
 
-.ana-dugme:hover:not(:disabled) {
-  filter: brightness(1.1);
+.ana-dugme:active:not(:disabled) {
+  filter: brightness(0.92);
 }
 
 .ana-dugme:disabled {
@@ -208,8 +224,32 @@ button {
   color: var(--vurgu);
 }
 
-.metin-dugme:hover {
+.metin-dugme:active {
   background: var(--kod-zemin);
+}
+
+/* Dokunmatik ekranda :hover dokunuştan sonra takılı kalır; yalnızca fare olan yerde. */
+@media (hover: hover) and (pointer: fine) {
+  .ana-dugme:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .metin-dugme:hover {
+    background: var(--kod-zemin);
+  }
+
+  .ornek:hover {
+    border-color: var(--vurgu);
+  }
+
+  .kaynak:hover {
+    border-color: var(--vurgu);
+    color: var(--vurgu);
+  }
+
+  .sekme:hover {
+    color: var(--yazi);
+  }
 }
 
 button:focus-visible,
@@ -308,7 +348,7 @@ main {
   line-height: 1.4;
 }
 
-.ornek:hover {
+.ornek:active {
   border-color: var(--vurgu);
 }
 
@@ -403,7 +443,7 @@ main {
   font-size: 0.83rem;
 }
 
-.kaynak:hover {
+.kaynak:active {
   border-color: var(--vurgu);
   color: var(--vurgu);
 }
@@ -452,7 +492,7 @@ main {
 
 .pdf-gorunumu {
   width: min(980px, 96vw);
-  height: 92vh;
+  height: 92dvh;
   padding: 0;
   overscroll-behavior: contain;
   border: 1px solid var(--cizgi);
@@ -522,7 +562,7 @@ main {
   white-space: nowrap;
 }
 
-.sekme:hover {
+.sekme:active {
   color: var(--yazi);
 }
 
@@ -549,7 +589,8 @@ main {
 .panel-ekrani > * {
   max-width: 1120px;
   margin-inline: auto;
-  padding-inline: 16px;
+  /* Yatay telefonda çentiğin altına girmesin. */
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
 }
 
 .panel-ust {
@@ -630,10 +671,31 @@ select:focus-visible {
   font-weight: 600;
 }
 
+.kpi-satiri {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
 .kpi-deger {
   font-size: 1.6rem;
   line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+}
+
+/* Durum hem şekil hem adla: renk körlüğünde yeşil ve kırmızı ayırt edilemez. */
+.seviye-etiketi {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--soluk);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.seviye-isareti {
+  color: var(--seviye);
 }
 
 .kpi.ana .kpi-deger {
@@ -643,7 +705,7 @@ select:focus-visible {
 .kpi-cubuk {
   height: 6px;
   border-radius: 999px;
-  background: var(--kod-zemin);
+  background: color-mix(in srgb, var(--seviye) 18%, var(--kod-zemin)); /* aynı rengin açığı */
   overflow: hidden;
 }
 
@@ -678,8 +740,8 @@ select:focus-visible {
   background: var(--seviye);
 }
 
-.lejant .nokta:not(:first-child) {
-  margin-left: 10px;
+.lejant .seviye-isareti:not(:first-child) {
+  margin-left: 12px;
 }
 
 .panel-izgara {
@@ -698,34 +760,116 @@ select:focus-visible {
   grid-column: 1 / -1;
 }
 
+h2,
+h3 {
+  text-wrap: balance;
+}
+
 .panel-kart h2 {
   margin: 0 0 12px;
   font-size: 0.98rem;
 }
 
-.trend-cubuklar {
+.trend-alan {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
+  border-radius: 4px;
+}
+
+.trend-alan:focus-visible {
+  outline: 2px solid var(--vurgu);
+  outline-offset: 4px;
+}
+
+/* Her gün eşit bir sütun; sütunun tamamı dokunma hedefi, çubuk en fazla 24 px. */
+.trend-sutunlar {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--gun), minmax(0, 1fr));
   height: 160px;
   border-bottom: 1px solid var(--cizgi);
 }
 
+.trend-gun {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-inline: 1px; /* çubuklar arasında 2 px boşluk */
+}
+
+.trend-gun.etkin {
+  background: color-mix(in srgb, var(--yazi) 6%, transparent);
+}
+
 .trend-cubuk {
-  flex: 1;
-  min-width: 2px;
+  width: 100%;
+  max-width: 24px;
   height: calc(var(--oran) * 100%);
-  border-radius: 2px 2px 0 0;
+  border-radius: 4px 4px 0 0;
   background: var(--seviye);
 }
 
-.trend-hedef {
+.trend-gun.etkin .trend-cubuk {
+  filter: brightness(1.15);
+}
+
+.trend-esik {
   position: absolute;
   inset-inline: 0;
   bottom: calc(var(--oran) * 100%);
-  border-top: 2px dashed var(--soluk);
+  border-top: 1px dashed var(--soluk);
   pointer-events: none;
+}
+
+.trend-esik.alt {
+  border-top-color: color-mix(in srgb, var(--soluk) 55%, transparent);
+}
+
+.trend-esik-adi {
+  position: absolute;
+  left: 0;
+  bottom: 1px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--soluk);
+  font-size: 0.7rem;
+}
+
+.trend-ipucu {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--cizgi);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--golge);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.trend-ipucu strong {
+  font-size: 1rem;
+}
+
+.tablo-gorunumu {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+
+.tablo-gorunumu summary {
+  color: var(--vurgu);
+  cursor: pointer;
+}
+
+.tablo-gorunumu .tablo-kap {
+  max-height: 260px;
+  margin-top: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .trend-eksen {
@@ -764,12 +908,8 @@ select:focus-visible {
   width: calc(var(--oran) * 100%);
   height: 8px;
   margin-top: 4px;
-  border-radius: 999px;
+  border-radius: 0 4px 4px 0; /* taban düz, uç yuvarlak */
   background: var(--vurgu);
-}
-
-.pareto-cubuk.ariza {
-  background: var(--kirmizi);
 }
 
 .tablo-kap {
@@ -822,7 +962,6 @@ select:focus-visible {
 
 .vardiya strong {
   font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .makine-listesi li {
@@ -982,7 +1121,7 @@ select:focus-visible {
 
 @media (max-width: 560px) {
   .ust {
-    padding: 10px 16px;
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
   }
 
   .sekme {
@@ -1073,6 +1212,7 @@ select:focus-visible {
 
 .telegram-penceresi {
   width: min(520px, 94vw);
+  overscroll-behavior: contain; /* pencerenin sonuna gelince arkadaki sayfa kaymasın */
   padding: 20px 22px;
   border: 1px solid var(--cizgi);
   border-radius: var(--yaricap);
@@ -1152,4 +1292,14 @@ select:focus-visible {
 
 .gizlilik li {
   margin-bottom: 4px;
+}
+
+/* iOS, 16 pikselden küçük yazılı alana odaklanınca sayfayı büyütür ve geri küçültmez. Dosyanın
+   sonunda: yukarıdaki "font: inherit" kurallarını ezmeli. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }

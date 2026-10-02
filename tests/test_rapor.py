@@ -163,6 +163,16 @@ def test_kural_yorumu_da_sayi_denetiminden_gecer(baglanti, test_verisi, sira):
     assert veri["hatti_durduran_ariza_sayisi"] == sum(a["hat_durdu"] for a in v["arizalar"])
 
 
+def test_sistem_istemindeki_esik_veride_var(baglanti, test_verisi):
+    """İstem "%65'in altındaki hatları öne çıkar" der; model bunu yazınca yorum reddedilmemeli.
+    Gerçek LLM'in ilk yorumu arayüzde bu yüzden reddedilmişti ("Verilerde olmayan sayılar: 65")."""
+    assert "%65" in rapor.SISTEM_ISTEMI
+    yorum = RaporYorumu(ozet="OEE'si %65'in altında kalan hatlar var.", dikkat=[], oneriler=[])
+    for baslangic in _ornek_vardiyalar(test_verisi):
+        veri = rapor.llm_verisi(rapor.rapor_verisi(baglanti, baslangic))
+        assert rapor.uydurulmus_sayilar(yorum, rapor.izinli_sayilar(veri)) == []
+
+
 def test_kural_yorumu_dusuk_oee_suren_ariza_ve_kritik_stogu_soyler(baglanti, test_verisi):
     v = rapor.rapor_verisi(baglanti, _vardiya_baslangiclari(test_verisi)[-1])
     v["hatlar"][0]["oee"] = 0.5

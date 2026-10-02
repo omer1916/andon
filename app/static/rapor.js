@@ -68,13 +68,19 @@ export function raporEkrani({ api, eleman, rol }) {
   async function kopyala() {
     if (!sonRapor) return;
     const dugme = $("rapor-kopyala");
+    const duyuru = $("rapor-kopya-durum"); // düğme metni değişimi ekran okuyucuya duyurulmaz
     try {
       await navigator.clipboard.writeText(sonRapor.markdown);
       dugme.textContent = "Kopyalandı";
+      duyuru.textContent = "Rapor metni panoya kopyalandı.";
     } catch {
       dugme.textContent = "Kopyalanamadı";
+      duyuru.textContent = "Kopyalanamadı; metni yazdır düğmesiyle alabilirsiniz.";
     }
-    setTimeout(() => (dugme.textContent = "Metni kopyala"), 2000);
+    setTimeout(() => {
+      dugme.textContent = "Metni kopyala";
+      duyuru.textContent = "";
+    }, 2000);
   }
 
   function ciz(r) {
@@ -196,7 +202,9 @@ export function raporEkrani({ api, eleman, rol }) {
       oee.append(eleman("span", `nokta ${seviye(h.oee)}`), document.createTextNode(yuzde(h.oee)));
       const yedi = eleman("td", null, yuzde(h.son_7_gun_oee));
       if (h.oee != null && h.son_7_gun_oee != null && h.oee < h.son_7_gun_oee - DUSUS_ESIGI) {
-        yedi.prepend(eleman("span", "dusus", "▼ "));
+        const ok = eleman("span", "dusus", "▼ ");
+        ok.setAttribute("aria-hidden", "true");
+        yedi.prepend(ok, eleman("span", "gorunmez", "bu vardiya 5 puandan fazla düşük; son 7 gün "));
         yedi.title = "Bu vardiyanın OEE'si son 7 günün 5 puandan fazla altında";
       }
       satir.append(

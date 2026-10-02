@@ -19,8 +19,13 @@ bakım mühendisi bütün kılavuzları görür.
 **OEE paneli** hatların vardiya verisinden OEE'yi (kullanılabilirlik × performans × kalite),
 günlük seyrini, duruş nedenlerinin Pareto'sunu ve hattı en uzun durduran makineleri gösterir.
 Renkler andon ışıklarıyla aynıdır: %85 ve üstü yeşil (dünya standardı), %65–85 sarı, altı
-kırmızı. "Asistana sor" düğmesi paneldeki hat ve tarih aralığıyla asistana "OEE neden bu
-seviyede?" diye sorar; asistan aynı sayıları `oee_hesapla` aracından alır.
+kırmızı. Andon yeşili ile kırmızısı kırmızı-yeşil renk körlüğünde neredeyse aynı göründüğü için
+(ölçülen OKLab farkı 5, gereken en az 8) durum hiçbir yerde yalnızca renkle verilmez: her
+seviyenin bir şekli ve adı var (● iyi, ◆ orta, ▼ düşük). Günlük grafiğin değerleri fareyle,
+dokunarak ve ok tuşlarıyla okunur, ayrıca tablo olarak açılır. Seçili hat ve dönem adreste
+tutulur (`#oee?hat=Pres+3&donem=7`), bağlantı paylaşılınca aynı görünüm açılır. "Asistana sor"
+düğmesi paneldeki hat ve tarih aralığıyla asistana "OEE neden bu seviyede?" diye sorar;
+asistan aynı sayıları `oee_hesapla` aracından alır.
 
 **Vardiya raporu** bir vardiyanın OEE'sini, en uzun duruşlarını, vardiyada başlayan arızaları,
 açık bakım taleplerini ve kritik stoğu tek sayfada toplar; asistan da bunlardan kısa bir özet ve
@@ -90,7 +95,7 @@ http://localhost:8000/docs adresindedir.
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
 | Telegram | Bot API, httpx ile ince istemci, uzun yoklama (dışarıya açık adres gerekmez) |
-| Kalite | pytest (2574 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2575 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Telegram botu
@@ -471,7 +476,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2574 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2575 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -487,7 +492,7 @@ embedder, senaryolu LLM); böylece testler model indirmeden ve API anahtarı olm
 | `test_guvenlik_matrisi` | 269 | Her rol × uç nokta × token türü (süresi dolmuş, yanlış anahtar, `alg: none`, eksik alan, bilinmeyen rol...), yol oynamayla PDF, NUL baytı |
 | `test_telegram` | 58 | Eşleşmemiş sohbete ve gruplara veri gitmemesi, kodun özetinin saklanması, tek kullanım, süre ve deneme sınırı, silinmiş kullanıcı, rol (operatöre bakım kılavuzu yok), HTML kaçırma ve her girdide doğru iç içe etiket (Hypothesis), düz metne dönüş, soru sınırı, fotoğraflı talep, bildirimin role ve ayara göre içeriği, iki sorgu arasına yazılan ve sonradan hattı durduran arıza, engelleyen kullanıcı, komutlar, saklama süresi, hata sonrası offset, günlüğe içerik sızmaması, Bot API hatalarında token sızmaması |
 | `test_bakim_plani` | 341 | Weibull MLE'nin bilinen parametreleri bulması ve SciPy ile aynı olması, sansürün etkisi, olabilirlik oranı testinin yanlış alarm oranı, sırt çantasının 300 örnekte kaba kuvvetle aynı olması, plan verisinin SQL'siz hesapla aynı olması, 7 kapasitede en iyi seçim, rol ve doğrulama |
-| `test_rapor` | 58 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
+| `test_rapor` | 59 | Sayı denetimi (Türkçe/İngilizce yazım, uydurma fark ve hedef), 15 vardiyada raporun verisi SQL'siz hesapla aynı, kural yorumu da denetimden geçiyor, sahte LLM ile kabul / bir kez düzeltme / iki kez ret / API hatası yolları ve kayıtları |
 | `test_arama_butunlugu` | 118 | Her kılavuz parçası kendi metniyle ilk sırada bulunuyor; operatör 46 bakım parçasının hiçbirine birebir metniyle bile ulaşamıyor |
 | `test_arayuz_metin` | 100 | Arayüzün HTML temizleyicisi (Node ile) 46 XSS yükünde izinli etiket dışında hiçbir şey, hiçbir öznitelik üretmiyor |
 | `test_arac_girdileri` | 79 | LLM'in gönderebileceği bozuk argümanlar, bozuk JSON ve SQL injection denemeleri düzeltilebilir hata dönüyor, veri bozulmuyor |
@@ -506,7 +511,13 @@ atlanmaz, başarısız olur.
 Ayrıca iki inceleme yapıldı: güvenlik incelemesi (doğrulanmış açık bulunmadı; önerilen
 sertleştirmeyle veritabanı ve API portları yalnızca `127.0.0.1`'e bağlandı) ve arayüz
 yönergeleri denetimi (erişilebilirlik, odak, hareket azaltma, form davranışı; bulgular
-düzeltildi).
+düzeltildi). OEE, rapor, bakım planı ve Telegram ekranları eklendikten sonra ikisi
+tekrarlandı; güvenlik incelemesinde yine doğrulanmış açık çıkmadı. Arayüzde ekran adreste
+tutuluyor, geri alınamayan işlemler onay istiyor, istek sürerken düğmeler kilitleniyor,
+telefonda yazı alanları 16 px (iOS odaklanınca sayfayı büyütmesin) ve dokununca takılı kalan
+hover durumları yalnızca fareli cihazlarda. Tarayıcıdaki denemede vardiya raporunun bir hatası
+çıktı: sistem istemi "%65'in altındaki hatlar" diyordu ama 65 sayı denetiminin baktığı veride
+yoktu, model bunu yazınca doğru yorum reddediliyordu; eşik veriye eklendi.
 
 Her iş kendi branch'inde geliştirildi ve pull request ile birleştirildi:
 [#1 iskelet](https://github.com/omer1916/andon/pull/1) ·
@@ -585,7 +596,7 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2574 test
+tests/           2575 test
 ```
 
 ## Bilinen eksikler
