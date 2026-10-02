@@ -14,6 +14,8 @@ lisans dosyası var.
 | `penetration-testing-with-strix`, `web-app-penetration-testing`, `api-security-testing`, `find-security-vulnerabilities-in-code`, `fix-security-vulnerabilities-with-strix`, `owasp-top-10-testing`, `application-security-testing`, `ci-security-scanning-with-strix`, `managed-pentesting-with-strix` | [usestrix/strix](https://github.com/usestrix/strix) `007ed1a` | Apache-2.0 | Strix'i çalıştırmak, bulguları düzeltmek, düzeltmeyi yeniden taramayla doğrulamak |
 | `emil-design-eng`, `animate`, `review-animations`, `improve-animations`, `find-animation-opportunities`, `animation-vocabulary`, `apple-design`, `mobile-native` | [emilkowalski/skills](https://github.com/emilkowalski/skills) `d16ebe6` | MIT | Arayüz detayı, animasyon kararları, telefonda/tablette uygulama hissi |
 | `redesign-existing-projects` | [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) `ce26fc2` | MIT | Var olan arayüzü "yapay zekâ yapmış gibi" görünen kalıplara karşı denetleme |
+| `supabase-postgres-best-practices` | [supabase/agent-skills](https://github.com/supabase/agent-skills) `c9be0e9` | MIT | Her PostgreSQL için index, pgvector, bağlantı havuzu, EXPLAIN ve kilitlenme kuralları; SQL yazılırken devreye girer |
+| `webapp-testing` | [anthropics/skills](https://github.com/anthropics/skills) `8a1541c` | Apache-2.0 | Playwright ile yerel web uygulamasını açıp test eden scriptler |
 
 Emil Kowalski'nin React, React Native ve Swift'e özel skill'leri (`animate-expo`, `ask-sonner`,
 `pick-ui-library`, `write-swift`, `prototype`) alınmadı; arayüz vanilla JavaScript. Taste
@@ -21,23 +23,9 @@ Skill'in diğer 12 skill'i açılış sayfası, React/Tailwind veya görsel üre
 
 ## Plugin'ler (`.claude/settings.json`)
 
-Plugin'ler hook ve MCP sunucusu çalıştırabildiği için bu dosyayı Claude kendi başına yazmadı;
-aşağıdaki komutlar proje kökünde bir kez çalıştırılınca dosyayı oluşturur. Sonra commit'lenir
-ve repoyu açan herkes aynı plugin'leri görür.
-
-```bash
-claude plugin marketplace add anthropics/claude-plugins-official --scope project
-claude plugin marketplace add "pbakaus/impeccable#skill-v4.4.0" --scope project
-claude plugin marketplace add "nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0" --scope project
-
-claude plugin install security-guidance@claude-plugins-official --scope project
-claude plugin install claude-code-setup@claude-plugins-official --scope project
-claude plugin install context7@claude-plugins-official --scope project
-claude plugin install playwright@claude-plugins-official --scope project
-claude plugin install frontend-design@claude-plugins-official --scope project
-claude plugin install impeccable@impeccable --scope project
-claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill --scope project
-```
+Dosya repoda; andon'u açan her Claude Code oturumu ilk açılışta bu plugin'leri kurmayı önerir.
+Üçüncü taraf Impeccable ve UI/UX Pro Max bir sürüm etiketine sabitli. Aynı plugin'leri
+bilgisayardaki bütün projelerde açmak için "Bütün projelerde kullanmak için" bölümüne bakın.
 
 | Plugin | Kimden | Ne yapar | Dikkat |
 |---|---|---|---|
@@ -48,6 +36,11 @@ claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill --scope project
 | `frontend-design` | Anthropic | Sıradan şablon görünümünden kaçınan arayüz tasarımı | |
 | `impeccable` | Paul Bakaus | `/impeccable` ile 24 komut (`audit`, `critique`, `polish`, `harden`...) ve 61 kurallı "yapay zekâ kokan tasarım" dedektörü | Hook'ları her düzenlemede çalışan bir ikili dosya kullanır; dosya GitHub sürümünden SHA-256 doğrulanarak indirilir |
 | `ui-ux-pro-max` | NextLevelBuilder | Yerel, aranabilir tasarım veritabanı: 192 renk paleti, 74 yazı tipi eşleşmesi, 119 UX kuralı (Python, bağımlılıksız) | Yanında banner, sunum ve marka skill'leri de gelir |
+| `claude-security` | Anthropic | `/claude-security`: ajan ekibiyle derin güvenlik taraması; her bulgu ayrıca doğrulanır, istenirse yama dosyası önerir. Docker ve ayrı LLM anahtarı gerekmez | Taramadan önce süre ve kullanım için onay ister |
+| `superpowers` | Jesse Vincent (obra) | Beyin fırtınası, plan, TDD ve sistematik hata ayıklama iş akışı | Küçük işleri de "önce planla" düzenine sokar; her oturum başında talimat yükler. Kapatmak için `/plugin disable superpowers` |
+| `semgrep` | Semgrep | Her düzenlemede Semgrep Code, Supply Chain ve Secrets taraması | Ücretsiz Semgrep hesabı gerekir: Claude'a "login to semgrep" denir |
+| `pyright-lsp` | Anthropic | Python tip hatalarını düzenleme anında Claude'a gösterir | Bilgisayarda `npm i -g pyright` gerekir; proje tip denetimi kullanmadığı için başta çok uyarı çıkabilir |
+| `insecure-defaults`, `sharp-edges`, `supply-chain-risk-auditor`, `static-analysis`, `property-based-testing`, `differential-review`, `variant-analysis`, `post-patch-validation` | Trail of Bits | Tehlikeli varsayılanlar (ör. `DEMO_PAROLA`, boş JWT anahtarı), yanlış kullanıma açık API'ler, PyPI tedarik zinciri riski, yerel CodeQL/Semgrep, Hypothesis testleri, güvenlik odaklı diff incelemesi, bir açığın benzerlerini arama, düzeltmenin açığı kapattığını doğrulama | Hook'ları yok; yalnızca ilgili iş yapılırken devreye girer. Lisans CC BY-SA 4.0 |
 
 Üçüncü taraf iki marketplace bir sürüm etiketine sabitlendi: yeni sürümler incelenmeden
 gelmez. Güncellemek için etiket değiştirilir.
@@ -55,6 +48,20 @@ gelmez. Güncellemek için etiket değiştirilir.
 Tasarım skill'leri hızlı görünüm için CDN'den yazı tipi veya kütüphane eklemeyi önerebilir.
 Bu projede arayüzün dış bağımlılığı yok ve fabrika ağında internet olmayabilir; öneriler bu
 kurala göre uygulanmalı.
+
+## Veritabanı MCP'si (`.mcp.json`)
+
+[Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp) (`postgres-mcp==0.3.0`, MIT): Claude yerel andon
+veritabanına **salt okunur** (`--access-mode=restricted`) bağlanır; sorgu planlarını inceler,
+index önerir, veritabanı sağlığını kontrol eder. Veriyi ve şemayı değiştiremez.
+
+- Bilgisayarda [uv](https://docs.astral.sh/uv/) kurulu olmalı (`uvx` komutu) ve veritabanı açık
+  olmalı (`docker compose up -d db`).
+- Varsayılan bağlantı `postgresql://andon:andon@127.0.0.1:5432/andon`; farklıysa
+  `ANDON_DATABASE_URI` ortam değişkeniyle değiştirilir.
+- Index önerileri için veritabanında `pg_stat_statements` ve `hypopg` eklentileri gerekir;
+  bunlar olmadan da planlar ve sağlık kontrolü çalışır.
+- Bulut oturumlarında veritabanı olmadığı için bağlanamaz; bu bir hata değildir.
 
 ## GitHub tarafı
 
@@ -102,13 +109,43 @@ maliyet kontrol edilmeli.
 
 ## Bütün projelerde kullanmak için
 
-Yukarıdakiler yalnızca bu repoda geçerli. Aynı araçları bilgisayardaki her projede açmak için
-komutlar `--scope project` yerine `--scope user` ile (ya da hiç `--scope` vermeden)
-çalıştırılır. Skill'ler için:
+Yukarıdakiler yalnızca bu repoda geçerli. Aynı plugin'leri bilgisayardaki her projede açmak
+için (Claude Code kurulu olmalı):
+
+```bash
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin marketplace add "pbakaus/impeccable#skill-v4.4.0"
+claude plugin marketplace add "nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0"
+claude plugin marketplace add trailofbits/skills
+
+claude plugin install security-guidance@claude-plugins-official
+claude plugin install claude-code-setup@claude-plugins-official
+claude plugin install context7@claude-plugins-official
+claude plugin install playwright@claude-plugins-official
+claude plugin install frontend-design@claude-plugins-official
+claude plugin install claude-security@claude-plugins-official
+claude plugin install superpowers@claude-plugins-official
+claude plugin install semgrep@claude-plugins-official
+claude plugin install pyright-lsp@claude-plugins-official
+claude plugin install impeccable@impeccable
+claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill
+claude plugin install insecure-defaults@trailofbits
+claude plugin install sharp-edges@trailofbits
+claude plugin install supply-chain-risk-auditor@trailofbits
+claude plugin install static-analysis@trailofbits
+claude plugin install property-based-testing@trailofbits
+claude plugin install differential-review@trailofbits
+claude plugin install variant-analysis@trailofbits
+claude plugin install post-patch-validation@trailofbits
+```
+
+Skill'ler için:
 
 ```bash
 npx skills add usestrix/strix
 npx skills@latest add emilkowalski/skills
+npx skills add supabase/agent-skills --skill supabase-postgres-best-practices
+npx skills add anthropics/skills --skill webapp-testing
 ```
 
 ## Eklenmeyenler
@@ -123,3 +160,6 @@ npx skills@latest add emilkowalski/skills
 | Skill UI | ~240 yıldızlı küçük bir proje, Nisan 2026'dan beri güncellenmemiş ve repoda lisans dosyası yok. Başka bir markanın tasarım sistemini kopyalamak telif ve ticari takdim sorunu doğurabilir |
 | Find Skills | Kendisi zararsız, ama incelenmemiş üçüncü taraf skill'leri kurar. Snyk'in yaklaşık 4.000 skill üzerindeki ToxicSkills incelemesinde 76'sı kötü amaçlı çıktı. Skill, kurulmadan önce okunmalı |
 | Taste Skill'in tamamı | Ana skill açılış sayfası ve React/Tailwind odaklı, diğerleri görsel üretimi üzerine; vanilla CSS ile çalışan `redesign-existing-projects` alındı |
+| Vercel web-design-guidelines | Kurallarını her çalışmada sürüme sabitlenmemiş bir internet dosyasından çeker; dosya değişirse Claude'un talimatı da değişir. Aynı işi Impeccable yapıyor |
+| Trail of Bits modern-python, fp-check | Biri projeyi pip'ten uv'ye taşımaya yönlendirir; diğeri her cevabın sonunda ek bir LLM kontrolü çalıştırır |
+| Logfire, SonarQube, Aikido | Hesap ya da ücretli servis gerektirir |
