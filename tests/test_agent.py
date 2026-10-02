@@ -78,6 +78,7 @@ def test_arac_semalari_llm_icin_sade():
     assert set(semalar) == {
         "ariza_say",
         "oee_hesapla",
+        "bakim_plani_oner",
         "dokuman_ara",
         "stok_sorgula",
         "bakim_talebi_olustur",

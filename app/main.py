@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, agent, rag, rapor, sorgular
+from app import __version__, agent, bakim_plani, rag, rapor, sorgular
 from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, token_uret
 from app.ayarlar import ayarlar
 from app.db import TZ, havuz_olustur
@@ -31,6 +31,8 @@ from app.models import (
     AramaSonucu,
     ArizaFiltresi,
     ArizaListesi,
+    BakimPlani,
+    BakimPlaniFiltresi,
     Hat,
     KullanimOzeti,
     OeeFiltresi,
@@ -243,6 +245,20 @@ def chat(
             "sure_ms": sonuc.sure_ms,
         },
     )
+
+
+@router.get(
+    "/bakim-plani",
+    response_model=BakimPlani,
+    responses={403: {"description": "Yalnızca bakım rolü"}},
+    summary="Haftalık bakım planı: makinelerin arıza riski ve ekip saatinin en iyi dağılımı",
+)
+def bakim_plani_getir(
+    filtre: Annotated[BakimPlaniFiltresi, Query()],
+    conn: Baglanti,
+    _: Annotated[Kullanici, Depends(rol_gerekli("bakim"))],
+):
+    return bakim_plani.bakim_plani(conn, datetime.now(TZ), **filtre.model_dump())
 
 
 @router.post(

@@ -21,6 +21,7 @@ UC_NOKTALAR = {
     "hatlar": ("GET", "/hatlar", None, {"operator": 200, "bakim": 200}),
     "arizalar": ("GET", "/arizalar?hat=Pres%203", None, {"operator": 200, "bakim": 200}),
     "oee": ("GET", "/oee?hat=Pres%203", None, {"operator": 200, "bakim": 200}),
+    "bakim-plani": ("GET", "/bakim-plani", None, {"operator": 403, "bakim": 200}),
     "ara": ("GET", "/ara?soru=hidrolik", None, {"operator": 200, "bakim": 200}),
     "kullanim": ("GET", "/kullanim", None, {"operator": 403, "bakim": 200}),
     "pdf-operasyon": ("GET", "/dokumanlar/PRES-OT-01/pdf", None, {"operator": 200, "bakim": 200}),

@@ -411,6 +411,42 @@ def acik_talepler(conn: psycopg.Connection, limit: int = 5) -> tuple[int, list[d
         return toplam[0], cur.fetchall()
 
 
+def makine_arizalari(conn: psycopg.Connection, bas: datetime, bit: datetime) -> list[dict]:
+    """Her makinenin [bas, bit] aralığında başlayan arızaları ve her arızanın hattı durdurduğu
+    toplam süre; makine ve başlangıç sırasıyla. Arızası olmayan makine, arıza alanları boş tek
+    bir satırla gelir."""
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT m.kod AS makine_kodu, m.ad AS makine_adi, h.ad AS hat,
+                   a.id AS ariza_id, a.baslangic, a.bitis, a.ariza_tipi,
+                   (SELECT coalesce(sum(d.sure_dk), 0) FROM vardiya_duruslari d
+                    WHERE d.ariza_id = a.id)::int AS durus_dk
+            FROM makineler m
+            JOIN hatlar h ON h.id = m.hat_id
+            LEFT JOIN ariza_kayitlari a
+                   ON a.makine_id = m.id AND a.baslangic >= %s AND a.baslangic <= %s
+            ORDER BY m.id, a.baslangic, a.id
+            """,
+            [bas, bit],
+        )
+        return cur.fetchall()
+
+
+def bakim_sureleri(conn: psycopg.Connection) -> dict[str, float]:
+    """Makine başına tamamlanmış periyodik bakımların ortalama süresi (saat)."""
+    satirlar = conn.execute(
+        """
+        SELECT m.kod, avg(extract(epoch FROM e.kapanis - e.acilis))::float / 3600
+        FROM is_emirleri e
+        JOIN makineler m ON m.id = e.makine_id
+        WHERE e.tip = 'periyodik' AND e.kapanis IS NOT NULL
+        GROUP BY m.kod
+        """
+    ).fetchall()
+    return dict(satirlar)
+
+
 def stok_getir(
     conn: psycopg.Connection, *, parca_kodu: str | None = None, sadece_kritik: bool = False
 ) -> list[dict]:
