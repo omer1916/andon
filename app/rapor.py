@@ -119,6 +119,9 @@ def llm_verisi(v: dict) -> dict:
     return {
         "vardiya": f"{v['tarih']:%d.%m.%Y}, {v['vardiya']}. vardiya "
         f"({_saat_araligi(v['vardiya'])})",
+        # Sistem istemi "%65'in altındaki hatları öne çıkar" der; eşik veride olmazsa model
+        # "%65'in altında" yazınca sayı denetimi doğru cümleyi uydurma sayar (arayüzde görüldü).
+        "dusuk_oee_esigi_yuzde": yuzde(DUSUK_OEE),
         "fabrika_yuzde": _oranlar(v["fabrika"]),
         "hatlar_yuzde": [
             {"hat": h["hat"], **_oranlar(h), "son_7_gun_oee": yuzde(h["son_7_gun_oee"])}

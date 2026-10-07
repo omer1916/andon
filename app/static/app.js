@@ -31,16 +31,23 @@ class OturumBitti extends Error {
   name = "OturumBitti";
 }
 
-let oturum = oturumuOku();
-let bekleniyor = false;
-let aktifEkran = "sohbet";
-
 const EKRANLAR = {
   sohbet: "sohbet-ekrani",
   oee: "oee-ekrani",
   rapor: "rapor-ekrani",
   plan: "plan-ekrani",
 };
+
+// Açık ekran adreste tutulur (#oee, #rapor...): sayfa yenilenince ya da bağlantı
+// paylaşılınca aynı ekran açılır. Ekranın kendi durumu "?" sonrasındadır (OEE filtresi).
+function adresinEkrani() {
+  const ad = location.hash.slice(1).split("?")[0];
+  return Object.hasOwn(EKRANLAR, ad) ? ad : null;
+}
+
+let oturum = oturumuOku();
+let bekleniyor = false;
+let aktifEkran = adresinEkrani() ?? "sohbet";
 const rapor = raporEkrani({ api, eleman, rol: () => oturum?.rol });
 const bakim = bakimEkrani({ api, eleman });
 telegramPenceresi({ api });
@@ -125,6 +132,7 @@ function ekraniGoster() {
 
 function ekranSec(ad) {
   aktifEkran = ad;
+  if (adresinEkrani() !== ad) history.replaceState(null, "", `#${ad}`);
   for (const [ekran, id] of Object.entries(EKRANLAR)) $(id).hidden = ekran !== ad;
   for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {
     if (sekme.dataset.ekran === ad) sekme.setAttribute("aria-current", "page");
@@ -139,6 +147,14 @@ function ekranSec(ad) {
 for (const sekme of $("sekmeler").querySelectorAll(".sekme")) {
   sekme.addEventListener("click", () => ekranSec(sekme.dataset.ekran));
 }
+
+// Adres çubuğuna elle #oee yazılırsa; rol kısıtlı ekranlar ekraniGoster'de yine elenir.
+window.addEventListener("hashchange", () => {
+  const ad = adresinEkrani();
+  if (!oturum || !ad || ad === aktifEkran) return;
+  aktifEkran = ad;
+  ekraniGoster();
+});
 
 function girisHatasiGoster(metin) {
   const alan = $("giris-hatasi");
