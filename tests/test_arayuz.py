@@ -1,3 +1,4 @@
+import psycopg
 import pytest
 
 from tests.conftest import BAKIM, OPERATOR, yetki
@@ -28,6 +29,26 @@ def test_pdf_rol_yetkisine_uyar(istemci, kullanici, kod, durum):
     if durum == 200:
         assert cevap.headers["content-type"] == "application/pdf"
         assert cevap.content.startswith(b"%PDF")
+
+
+@pytest.mark.parametrize(
+    "dosya",
+    ["../../.env", "../../app/main.py", "..\\..\\.env", "/etc/hosts", "PRES-OT-01.md"],
+)
+def test_pdf_bozuk_dosya_adi_klasor_disina_cikamaz(istemci, test_veritabani, dosya):
+    # Veritabanındaki dosya adı bozulsa bile yalnızca kılavuz klasöründeki PDF'ler sunulur.
+    with psycopg.connect(test_veritabani, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO dokumanlar (kod, baslik, dosya, erisim, sayfa_sayisi) "
+            "VALUES ('BOZUK-01', 'Bozuk', %s, 'operasyon', 1)",
+            [dosya],
+        )
+        try:
+            cevap = istemci.get("/dokumanlar/BOZUK-01/pdf", headers=yetki(BAKIM))
+        finally:
+            conn.execute("DELETE FROM dokumanlar WHERE kod = 'BOZUK-01'")
+    assert cevap.status_code == 404
+    assert not cevap.content.startswith(b"%PDF")
 
 
 def test_pdf_girissiz_401(istemci):

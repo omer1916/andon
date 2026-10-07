@@ -593,7 +593,8 @@ def test_mesaj_sinira_gore_bolunur():
     assert mesaji_bol("") == [] and mesaji_bol("kısa") == ["kısa"]
 
 
-TOKEN = "123456:GIZLI-TOKEN-ABC"
+# Sahte bot tokeni; yalnızca testlerde, hiçbir yere gönderilmez.
+TOKEN = "123456:GIZLI-TOKEN-ABC"  # nosec B105  # secscope: ignore
 
 
 def _api(isleyici) -> TelegramAPI:

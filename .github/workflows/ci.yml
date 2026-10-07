@@ -26,7 +26,7 @@ jobs:
           --health-retries 10
 
     env:
-      TEST_DATABASE_URL: postgresql://andon:andon@127.0.0.1:5432/andon_test
+      TEST_DATABASE_URL: postgresql://andon:andon@127.0.0.1:5432/andon_test  # secscope: ignore SECRET-DBURL-001 (CI'daki geçici test veritabanı)
       # Veritabanına ulaşılamazsa testler atlanmasın, başarısız olsun.
       ANDON_DB_ZORUNLU: "1"
 

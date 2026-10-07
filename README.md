@@ -131,7 +131,8 @@ bota giden mesajları yazdırır. Gerçek Telegram'a istek gitmez. Token bir par
      ```
 3. `.env` dosyasına ekle:
    ```
-   TELEGRAM_BOT_TOKEN=<BotFather'ın verdiği token>
+   # BotFather'ın verdiği token
+   TELEGRAM_BOT_TOKEN=
    TELEGRAM_BOT_KULLANICI_ADI=andon_fabrika_bot
    ```
 4. Botu başlat:
