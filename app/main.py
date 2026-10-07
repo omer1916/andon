@@ -25,6 +25,7 @@ from app.auth import AktifKullanici, Kullanici, parola_dogrula, rol_gerekli, tok
 from app.ayarlar import ayarlar
 from app.db import TZ, havuz_olustur
 from app.embedding import Embedder, TembelEmbedder, varsayilan_embedder
+from app.guvenlik_basliklari import GuvenlikBasliklari
 from app.llm import LLM, LLMAyarHatasi, llm_olustur
 from app.models import (
     VARDIYA_SAATLERI,
@@ -447,6 +448,7 @@ def uygulama_olustur(model_on_yukle: bool = True) -> FastAPI:
     )
     uygulama.state.model_on_yukle = model_on_yukle
     uygulama.add_exception_handler(psycopg.DataError, _veri_hatasi)
+    uygulama.add_middleware(GuvenlikBasliklari)
     uygulama.include_router(router)
     uygulama.mount("/static", StaticFiles(directory=STATIK_KLASOR), name="static")
     return uygulama
