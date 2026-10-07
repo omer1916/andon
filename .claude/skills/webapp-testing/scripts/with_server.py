@@ -66,7 +66,9 @@ def main():
             print(f"Starting server {i+1}/{len(servers)}: {server['cmd']}")
 
             # Use shell=True to support commands with cd and &&
-            process = subprocess.Popen(
+            # (Andon) The command is the developer's own --server argument to this local test
+            # helper, i.e. as trusted as typing it in a terminal; it never comes from a request.
+            process = subprocess.Popen(  # nosec B602  # nosemgrep  # secscope: ignore SAST-CMDI-001
                 server['cmd'],
                 shell=True,
                 stdout=subprocess.PIPE,

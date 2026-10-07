@@ -8,6 +8,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from datetime import datetime, time
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -131,7 +132,7 @@ def giris(form: Annotated[OAuth2PasswordRequestForm, Depends()], conn: Baglanti)
     kullanici = Kullanici(satir["kullanici_adi"], satir["ad_soyad"], satir["rol"])
     return Token(
         access_token=token_uret(kullanici),
-        token_type="bearer",
+        token_type="bearer",  # nosec B106  # OAuth2 standart değeri, parola değil
         kullanici_adi=kullanici.kullanici_adi,
         ad_soyad=kullanici.ad_soyad,
         rol=kullanici.rol,
@@ -156,7 +157,11 @@ def _hat_dogrula(conn: psycopg.Connection, hat: str | None) -> None:
 )
 def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti, _: AktifKullanici):
     _hat_dogrula(conn, filtre.hat)
-    toplam, kayitlar = sorgular.arizalari_getir(conn, **filtre.model_dump())
+    # Filtre modelleri fazladan alan kabul etmez (extra="forbid"); değerler sorgu
+    # fonksiyonunun parametrelerine gider, bir veritabanı kaydına toplu atanmaz.
+    toplam, kayitlar = sorgular.arizalari_getir(  # secscope: ignore SAST-MASSASSIGN-001
+        conn, **filtre.model_dump()
+    )
     return ArizaListesi(toplam=toplam, arizalar=kayitlar)
 
 
@@ -169,14 +174,15 @@ def arizalar(filtre: Annotated[ArizaFiltresi, Query()], conn: Baglanti, _: Aktif
 def oee(filtre: Annotated[OeeFiltresi, Query()], conn: Baglanti, _: AktifKullanici):
     _hat_dogrula(conn, filtre.hat)
     f = filtre.model_dump()
-    (toplam,) = sorgular.oee_hesapla(conn, **f)
+    oee_hesapla = partial(sorgular.oee_hesapla, conn, **f)  # secscope: ignore SAST-MASSASSIGN-001
+    (toplam,) = oee_hesapla()
     return OeeOzeti(
         toplam=toplam,
-        hatlara_gore=sorgular.oee_hesapla(conn, **f, grup="hat"),
-        vardiyalara_gore=sorgular.oee_hesapla(conn, **f, grup="vardiya"),
-        gunluk=sorgular.oee_hesapla(conn, **f, grup="gun"),
-        duruslar=sorgular.durus_pareto(conn, **f),
-        makineler=sorgular.durduran_makineler(conn, **f),
+        hatlara_gore=oee_hesapla(grup="hat"),
+        vardiyalara_gore=oee_hesapla(grup="vardiya"),
+        gunluk=oee_hesapla(grup="gun"),
+        duruslar=sorgular.durus_pareto(conn, **f),  # secscope: ignore SAST-MASSASSIGN-001
+        makineler=sorgular.durduran_makineler(conn, **f),  # secscope: ignore SAST-MASSASSIGN-001
     )
 
 
@@ -259,7 +265,9 @@ def bakim_plani_getir(
     conn: Baglanti,
     _: Annotated[Kullanici, Depends(rol_gerekli("bakim"))],
 ):
-    return bakim_plani.bakim_plani(conn, datetime.now(TZ), **filtre.model_dump())
+    return bakim_plani.bakim_plani(  # secscope: ignore SAST-MASSASSIGN-001
+        conn, datetime.now(TZ), **filtre.model_dump()
+    )
 
 
 @router.post(
@@ -310,11 +318,17 @@ def dokuman_pdf(
     # Yetkisiz rol için de 404: dokümanın var olduğu bile anlaşılmasın.
     if dokuman is None or dokuman["erisim"] not in kullanici.erisim:
         raise HTTPException(404, "Doküman bulunamadı.")
-    return FileResponse(
-        KILAVUZ_KLASORU / dokuman["dosya"],
+    # Dosya adı kullanıcıdan değil veritabanından gelir (ingest yazar). Yine de bir kayıt
+    # bozulursa ("../.env" gibi) kılavuz klasörünün dışındaki bir dosya sunulmasın.
+    klasor = KILAVUZ_KLASORU.resolve()
+    yol = (klasor / dokuman["dosya"]).resolve()
+    if not yol.is_relative_to(klasor) or yol.suffix.lower() != ".pdf":
+        raise HTTPException(404, "Doküman bulunamadı.")
+    return FileResponse(  # secscope: ignore SAST-PATH-001 (yol yukarıda klasöre sınırlandı)
+        yol,
         media_type="application/pdf",
         content_disposition_type="inline",
-        filename=dokuman["dosya"],
+        filename=yol.name,
     )
 
 

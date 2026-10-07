@@ -14,7 +14,11 @@ class Ayarlar(BaseSettings):
         env_file=ENV_DOSYASI, env_file_encoding="utf-8", extra="ignore"
     )
 
-    database_url: str = "postgresql://andon:andon@127.0.0.1:5432/andon"
+    # Varsayılan: yalnızca 127.0.0.1'e açık yerel demo veritabanı (docker-compose.yml).
+    # Başka bir ortamda DATABASE_URL ortam değişkeniyle verilir.
+    database_url: str = (
+        "postgresql://andon:andon@127.0.0.1:5432/andon"  # secscope: ignore SECRET-DBURL-001
+    )
 
     llm_saglayici: Literal["gemini", "ollama"] = "gemini"
     llm_model: str | None = None  # boşsa sağlayıcının varsayılan modeli

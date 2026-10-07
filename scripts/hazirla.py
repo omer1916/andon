@@ -38,7 +38,7 @@ def _dolu_mu(conn: psycopg.Connection, tablo: str) -> bool:
     if conn.execute("SELECT to_regclass(%s)", [tablo]).fetchone()[0] is None:
         return False
     sorgu = sql.SQL("SELECT EXISTS (SELECT 1 FROM {})").format(sql.Identifier(tablo))
-    return conn.execute(sorgu).fetchone()[0]
+    return conn.execute(sorgu).fetchone()[0]  # secscope: ignore SAST-SQLI-001
 
 
 def main() -> None:

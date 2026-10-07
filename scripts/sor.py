@@ -61,7 +61,7 @@ def main() -> None:
         durum = f"  HATA: {cagri['hata']}" if cagri["hata"] else ""
         print(f"  - {cagri['ad']}({json.dumps(cagri['argumanlar'], ensure_ascii=False)}){durum}")
     maliyet = f"${sonuc.maliyet_usd:.5f}" if sonuc.maliyet_usd is not None else "bilinmiyor"
-    print(
+    print(  # secscope: ignore SAST-LOG-001 (token sayısı, token değil)
         f"\n{sonuc.model} | {sonuc.adim_sayisi} adım | {sonuc.girdi_token} girdi + "
         f"{sonuc.cikti_token} çıktı token | {maliyet} | {sonuc.sure_ms / 1000:.1f} sn"
     )

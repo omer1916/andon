@@ -29,7 +29,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}  # secscope: ignore SECRET-DBURL-001 (yalnızca 127.0.0.1 demo veritabanı)
     # Demo kullanıcıların parolası bilinen bir varsayılan olabilir; uygulama yalnızca bu
     # makineden erişilsin. Ağa açmak için önce DEMO_PAROLA değiştirilmeli.
     ports:
@@ -49,7 +49,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-andon}:${POSTGRES_PASSWORD:-andon}@db:5432/${POSTGRES_DB:-andon}  # secscope: ignore SECRET-DBURL-001 (yalnızca 127.0.0.1 demo veritabanı)
     command: ["python", "-m", "scripts.telegram_bot"]
     # Ağ kopmalarını bot kendisi yeniden dener; çıkıyorsa ayar hatasıdır (ör. token yok),
     # sonsuza kadar yeniden başlamasın.

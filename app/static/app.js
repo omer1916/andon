@@ -281,7 +281,8 @@ function hataMesaji(metin) {
 function asistanMesaji(veri) {
   const mesaj = mesajEkle("asistan");
   const govde = eleman("div", "govde");
-  govde.innerHTML = guvenliMarkdown(veri.cevap || "(boş cevap)");
+  // Metin önce kaçış karakterlerine çevrilir (metin.js); modelin yazdığı HTML çalışamaz.
+  govde.innerHTML = guvenliMarkdown(veri.cevap || "(boş cevap)"); // secscope: ignore SAST-XSS-001
   mesaj.append(govde);
 
   if (veri.kaynaklar.length) {

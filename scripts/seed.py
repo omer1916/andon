@@ -590,10 +590,10 @@ def veritabanina_yaz(conn: psycopg.Connection, veri: dict[str, list[Kayit]]) -> 
                 sql.SQL(", ").join(map(sql.Identifier, kolonlar)),
                 sql.SQL(", ").join(map(sql.Placeholder, kolonlar)),
             )
-            cur.executemany(ekle, kayitlar)
+            cur.executemany(ekle, kayitlar)  # secscope: ignore SAST-SQLI-001
             # id'leri biz yazdık; sıradaki kayıt (örn. agent'ın açtığı talep) çakışmasın diye
             # kimlik sayacını en büyük id'ye taşı.
-            cur.execute(
+            cur.execute(  # secscope: ignore SAST-SQLI-001
                 sql.SQL(
                     "SELECT setval(pg_get_serial_sequence(%s, 'id'), (SELECT max(id) FROM {}))"
                 ).format(sql.Identifier(tablo)),

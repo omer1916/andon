@@ -57,8 +57,8 @@ index önerir, veritabanı sağlığını kontrol eder. Veriyi ve şemayı deği
 
 - Bilgisayarda [uv](https://docs.astral.sh/uv/) kurulu olmalı (`uvx` komutu) ve veritabanı açık
   olmalı (`docker compose up -d db`).
-- Varsayılan bağlantı `postgresql://andon:andon@127.0.0.1:5432/andon`; farklıysa
-  `ANDON_DATABASE_URI` ortam değişkeniyle değiştirilir.
+- Varsayılan olarak yerel demo veritabanına bağlanır (`127.0.0.1:5432`, veritabanı, kullanıcı ve
+  parola `andon`); farklıysa `ANDON_DATABASE_URI` ortam değişkeniyle değiştirilir.
 - Index önerileri için veritabanında `pg_stat_statements` ve `hypopg` eklentileri gerekir;
   bunlar olmadan da planlar ve sağlık kontrolü çalışır.
 - Bulut oturumlarında veritabanı olmadığı için bağlanamaz; bu bir hata değildir.

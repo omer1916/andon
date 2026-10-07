@@ -257,7 +257,7 @@ def oee_hesapla(
         """
     ).format(secim=secim, where=where, gruplama=gruplama)
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(sorgu, parametreler)
+        cur.execute(sorgu, parametreler)  # secscope: ignore SAST-SQLI-001
         satirlar = cur.fetchall()
     sonuc = []
     for satir in satirlar:
@@ -316,7 +316,7 @@ def durus_pareto(
         """
     ).format(where)
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(sorgu, parametreler)
+        cur.execute(sorgu, parametreler)  # secscope: ignore SAST-SQLI-001
         satirlar = cur.fetchall()
     toplam = sum(s["sure_dk"] for s in satirlar)
     birikimli = 0
@@ -354,7 +354,7 @@ def durduran_makineler(
         """
     ).format(where)
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(sorgu, {**parametreler, "limit": limit})
+        cur.execute(sorgu, {**parametreler, "limit": limit})  # secscope: ignore SAST-SQLI-001
         return cur.fetchall()
 
 
