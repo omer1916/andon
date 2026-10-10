@@ -1,4 +1,4 @@
-# Andon
+# Hata Asistanı
 
 Fabrika verisi ve bakım kılavuzları üzerinde çalışan bir yapay zekâ asistanı. Operatör ya da bakım
 mühendisi sohbet ekranına şöyle bir soru yazar:
@@ -40,7 +40,9 @@ azaltacak makinelere dağıtır. Şu an arızalı olan makine de "tamirden sonra
 parça durumuyla anında bildirim gönderir; sahadan soru sormayı ve fotoğrafla bakım talebi
 açmayı sağlar. Ayrıntılar ve veri gizliliği: [Telegram botu](#telegram-botu).
 
-> Andon, fabrikalarda bir hatta sorun olduğunda yanan uyarı ışığı sisteminin adıdır.
+> **Adı ve ikonu:** Proje, fabrikalarda bir hatta sorun olduğunda yanan yeşil-sarı-kırmızı
+> uyarı ışığı sisteminden, *Andon*'dan esinlendi; arayüzdeki ışık kulesi ve panel renkleri
+> buradan geliyor. Kod deposunun adı bu yüzden `andon`.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
 
@@ -114,8 +116,8 @@ Token'ı almak dışında her şey hazır. Token almadan önce bütün akış ye
 sunucuya karşı çalıştırır (eşleştirme, soru, fotoğraflı talep, komutlar, arıza bildirimi) ve
 bota giden mesajları yazdırır. Gerçek Telegram'a istek gitmez. Token bir paroladır: kimseyle paylaşma, git'e koyma.
 
-1. Telegram'da **@BotFather**'ı aç, `/newbot` yaz. Bota bir ad (ör. *Andon Fabrika Asistanı*)
-   ve sonu `bot` ile biten bir kullanıcı adı (ör. `andon_fabrika_bot`) ver. Verdiği token'ı
+1. Telegram'da **@BotFather**'ı aç, `/newbot` yaz. Bota bir ad (ör. *Hata Asistanı*)
+   ve sonu `bot` ile biten bir kullanıcı adı (ör. `hata_asistani_bot`) ver. Verdiği token'ı
    kopyala.
 2. Aynı sohbette güvenlik için:
    - `/setjoingroups` → botu seç → **Disable** (bot gruplara eklenemesin; bot zaten grupları yok
@@ -133,7 +135,7 @@ bota giden mesajları yazdırır. Gerçek Telegram'a istek gitmez. Token bir par
    ```
    # BotFather'ın verdiği token
    TELEGRAM_BOT_TOKEN=
-   TELEGRAM_BOT_KULLANICI_ADI=andon_fabrika_bot
+   TELEGRAM_BOT_KULLANICI_ADI=hata_asistani_bot
    ```
 4. Botu başlat:
    ```bash
