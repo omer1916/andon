@@ -97,7 +97,7 @@ http://localhost:8000/docs adresindedir.
 | Güvenlik | JWT (PyJWT), argon2 (pwdlib) |
 | Arayüz | HTML, CSS, vanilla JavaScript (dış bağımlılık yok) |
 | Telegram | Bot API, httpx ile ince istemci, uzun yoklama (dışarıya açık adres gerekmez) |
-| Kalite | pytest (2575 test), Hypothesis, ruff, GitHub Actions |
+| Kalite | pytest (2590 test), Hypothesis, ruff, GitHub Actions |
 | Çalıştırma | Docker Compose |
 
 ## Telegram botu
@@ -479,7 +479,7 @@ Kontroller ve testler:
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                  # 2575 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
+pytest                                  # 2590 test (~1 dk); veritabanı kapalıysa DB testleri atlanır
 ```
 
 Testler gerçek bir PostgreSQL'e karşı çalışır: `andon_test` veritabanı sabit bir tarihle üretilen
@@ -599,8 +599,13 @@ scripts/         seed, ingest, kılavuz PDF üretimi, ölçüm ve değerlendirme
 sql/             şema ve referans sorgular
 data/kilavuzlar/ kurgusal kılavuzlar (Markdown kaynak + PDF)
 eval/            arama ve agent değerlendirme setleri
-tests/           2575 test
+sunum/           tanıtım PDF'i (Hata-Asistani-Tanitim.pdf) ve onu üreten betikler
+tests/           2590 test
 ```
+
+Tanıtım PDF'indeki ekran görüntüleri çalışan uygulamadan alınır:
+`python sunum/ekran_goruntuleri.py --adres http://127.0.0.1:8000` (Playwright gerekir, kurulu
+Chrome'u kullanır), ardından `python sunum/pdf_olustur.py`.
 
 ## Bilinen eksikler
 
