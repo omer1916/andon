@@ -70,11 +70,7 @@ p { margin: 0 0 2mm; }
 .alt-not { position: absolute; left: 17mm; right: 17mm; bottom: 7mm; display: flex;
   justify-content: space-between; font-size: 7.5pt; color: var(--soluk); }
 .giris { font-size: 11pt; color: var(--murekkep-2); max-width: 172mm; margin-bottom: 4mm; }
-.isiklar { display: inline-flex; flex-direction: column; gap: 0.6mm; padding: 0.9mm;
-  border-radius: 1.2mm; background: #1c1f24; vertical-align: middle; margin-right: 2mm; }
-.isiklar i { width: 2.2mm; height: 2.2mm; border-radius: 50%; display: block; }
-.isiklar .y { background: var(--yesil); } .isiklar .s { background: var(--sari); }
-.isiklar .k { background: var(--kirmizi); }
+.logo { height: 0.95em; width: auto; aspect-ratio: 83 / 56; vertical-align: -0.12em; margin-right: 0.3em; }
 
 /* Kapak */
 .kapak { background: var(--gece); color: #eef1ff; display: flex; flex-direction: column; }
@@ -137,12 +133,20 @@ p { margin: 0 0 2mm; }
 """
 
 
-def isik() -> str:
-    return '<span class="isiklar" aria-hidden="true"><i class="y"></i><i class="s"></i><i class="k"></i></span>'
+def logo() -> str:
+    """HA monogramı (app/static/index.html'dekiyle aynı çizim); rengi yazıdan gelir."""
+    return (
+        '<svg class="logo" viewBox="10 22 83 56" aria-hidden="true">'
+        '<rect x="10" y="22" width="13" height="56" fill="currentColor"/>'
+        '<polygon points="31,78 44.5,78 62,38.6 79.5,78 93,78 68.2,22 55.8,22" fill="currentColor"/>'
+        '<polygon points="23,48 66.18,48 71.06,59 23,59" fill="currentColor"/>'
+        '<polygon points="62,38.6 57.82,48 66.18,48" fill="#f5a524"/>'
+        "</svg>"
+    )
 
 
 def ust_serit(bolum: str) -> str:
-    return f'<div class="ust-serit"><span>{isik()}Hata Asistanı</span><span>{bolum}</span></div>'
+    return f'<div class="ust-serit"><span>{logo()}Hata Asistanı</span><span>{bolum}</span></div>'
 
 
 def alt_not(sayfa: int) -> str:
@@ -155,7 +159,7 @@ def alt_not(sayfa: int) -> str:
 def kapak() -> str:
     return f"""
 <section class="sayfa kapak">
-  <div class="kapak-ust"><span class="marka">{isik()}Hata Asistanı</span><span>Tanıtım · Ekim 2026</span></div>
+  <div class="kapak-ust"><span class="marka">{logo()}Hata Asistanı</span><span>Tanıtım · Ekim 2026</span></div>
   <h1>Arıza olduğunda cevabı, kaynağını göstererek saniyeler içinde veren asistan</h1>
   <p class="kapak-alt">Operatör ya da bakım mühendisi şöyle yazar:
     <q>Pres 3 hattında geçen ay kaç arıza oldu, bu tip arızada ilk neye bakmalıyım?</q>

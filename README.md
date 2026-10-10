@@ -1,4 +1,4 @@
-# Hata Asistanı
+# <img src="app/static/ikon.svg" alt="" width="44" align="absmiddle"> Hata Asistanı
 
 Fabrika verisi ve bakım kılavuzları üzerinde çalışan bir yapay zekâ asistanı. Operatör ya da bakım
 mühendisi sohbet ekranına şöyle bir soru yazar:
@@ -40,9 +40,10 @@ azaltacak makinelere dağıtır. Şu an arızalı olan makine de "tamirden sonra
 parça durumuyla anında bildirim gönderir; sahadan soru sormayı ve fotoğrafla bakım talebi
 açmayı sağlar. Ayrıntılar ve veri gizliliği: [Telegram botu](#telegram-botu).
 
-> **Adı ve ikonu:** Proje, fabrikalarda bir hatta sorun olduğunda yanan yeşil-sarı-kırmızı
-> uyarı ışığı sisteminden, *Andon*'dan esinlendi; arayüzdeki ışık kulesi ve panel renkleri
-> buradan geliyor. Kod deposunun adı bu yüzden `andon`.
+> **Adı ve logosu:** Proje, fabrikalarda bir hatta sorun olduğunda yanan yeşil-sarı-kırmızı
+> uyarı ışığı sisteminden, *Andon*'dan esinlendi; panellerdeki durum renkleri buradan geliyor.
+> Kod deposunun adı bu yüzden `andon`. Logo adın baş harfleri: H'nin sağ ayağı A'nın sol ayağı,
+> A'nın içindeki sarı üçgen bir uyarı işareti. Sekme ikonunda aynı harfler konuşma balonunda.
 > **Bu projedeki bütün veriler ve kılavuzlar kurgusaldır**; gerçek bir firmaya veya ekipmana ait
 > değildir.
 
